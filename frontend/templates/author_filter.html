@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Author Filter</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <button class="back-btn" onclick="window.history.back()">← Back</button>
+            <h1>Find Similar Authors</h1>
+            <p>Discover authors who write in similar styles to your favorites</p>
+        </header>
+
+        <main class="main-content">
+            <div class="author-search-container">
+                <div class="search-box">
+                    <input type="text" id="authorInput" placeholder="Enter author name">
+                    <button id="searchAuthorBtn" class="author-search-btn">Find Similar Authors</button>
+                </div>
+                <div id="authorResults" class="authors-results"></div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/search.js"></script>
+</body>
+</html>
