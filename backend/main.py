@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 from pathlib import Path
-from routers.filters import router as filters_router
-from routers.user import router as users_router
+from backend.routers.filters import router as filters_router
+from backend.routers.user import router as users_router
 import logging
 from logging.config import dictConfig
 
