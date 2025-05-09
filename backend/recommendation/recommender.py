@@ -6,7 +6,7 @@ from backend.api.open_library_api import (search_books_ol, get_author_details, f
 from backend.models import Book, Author
 import logging
 import time
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 logger = logging.getLogger(__name__)
 
 def recommend_by_genre(
@@ -61,55 +61,34 @@ def calculate_similarity(target_subjects: Set[str], candidate_subjects: List[str
 
 
 def recommend_similar_authors(target_author: str, limit: int) -> List[Author]:
-    start_time = time.time()
-    """Get similar authors with proper scoring"""
-    try:
-        logger.info(f"Starting recommendation for author: {target_author}")
+    """Get similar authors with parallel detail fetching"""
+    start = time.perf_counter()
+    logger.info(f"Starting recommendation for author: {target_author}")
 
-        # 1. Get initial candidates
-        candidates = find_similar_authors(target_author, limit=limit * 2)
-        logger.debug(f"Initial candidates count: {len(candidates)}")
-
-        if not candidates:
-            logger.warning("No candidates found")
-            return []
-
-        # 2. Get target author's subjects
-        target_author_data = get_author_details(candidates[0]['key'])
-        if not target_author_data:
-            logger.warning("Failed to get target author details")
-            return []
-
-        target_subjects = set(s.lower() for s in target_author_data.subjects)
-        logger.debug(f"Target subjects: {target_subjects}")
-
-        # 3. Score and filter candidates
-        results = []
-        for candidate in candidates:
-            author = get_author_details(candidate['key'])
-            if author:
-                similarity = calculate_similarity(
-                    target_subjects,
-                    [s.lower() for s in author.subjects]
-                )
-                author.similarity_score = similarity
-                results.append(author)
-                logger.debug(f"Processed author: {author.name} (score: {similarity})")
-
-        end_time = time.time()
-        print("Time of recommender system work:", end_time - start_time)
-        # Return sorted by score (at least 0.3 similarity)
-        return sorted(
-            results,
-            key=lambda x: x.similarity_score,
-            reverse=True
-        )[:limit]
-
-
-    except Exception as e:
-        logger.error(f"Error in recommend_similar_authors: {str(e)}", exc_info=True)
+    candidates = find_similar_authors(target_author, limit=limit * 2)
+    logger.debug(f"Initial candidates count: {len(candidates)}")
+    if not candidates:
         return []
 
+    target_data = get_author_details(candidates[0]['key'])
+    if not target_data:
+        return []
+    target_subjects = set(s.lower() for s in target_data.subjects)
+
+    results: List[Author] = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_key = {executor.submit(get_author_details, c['key']): c['key'] for c in candidates}
+        for future in as_completed(future_to_key):
+            author = future.result()
+            if not author:
+                continue
+            score = calculate_similarity(target_subjects, [s.lower() for s in author.subjects])
+            author.similarity_score = score
+            results.append(author)
+
+    duration = time.perf_counter() - start
+    logger.info(f"recommend_similar_authors took {duration:.2f}s")
+    return sorted(results, key=lambda x: x.similarity_score, reverse=True)[:limit]
 
 def recommend_similar_books(
     target_book: str,

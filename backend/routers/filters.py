@@ -1,18 +1,27 @@
 import traceback
 from typing import List
+from pathlib import Path
 
 from backend.api.open_library_api import get_author_details, logger
 from backend.models import Book, Author
 from fastapi import APIRouter, HTTPException, Query
 from starlette.responses import FileResponse
-from backend.recommendation.recommender import recommend_by_genre, recommend_similar_authors, recommend_similar_books
+from backend.recommendation.recommender import (
+    recommend_by_genre,
+    recommend_similar_authors,
+    recommend_similar_books
+)
 
 router = APIRouter(tags=["filters"])
+
+# Absolute path to project root (3 levels up: /project/backend/routers → /project)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # Routers for genre filter
 @router.get("/genre_filter")
 def get_genre_filter():
-    return FileResponse("../frontend/templates/genre_filter.html")
+    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "genre_filter.html")
+
 
 @router.get("/api/genre_filter", response_model=List[Book])
 async def genre_filter_api(
@@ -22,7 +31,6 @@ async def genre_filter_api(
     top_n: int = Query(20, description="Number of results to return")
 ):
     try:
-        # Call the recommender instead of raw API
         return recommend_by_genre(
             genres=genres,
             min_rating=min_rating,
@@ -36,28 +44,27 @@ async def genre_filter_api(
         )
 
 
-
 # Routers for author filter
 @router.get("/author_filter")
 def author_filter():
-    return FileResponse("../frontend/templates/author_filter.html")
+    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "author_filter.html")
 
 
 @router.get("/api/author", response_model=List[Author])
 async def get_author_recommendations(
-        author: str = Query(..., min_length=2),
-        limit: int = Query(10, ge=1, le=20)
+    author: str = Query(..., min_length=2),
+    limit: int = Query(10, ge=1, le=20)
 ):
-    """Возвращаем все рекомендованные авторы, даже с 0 баллов."""
+    """Return similar authors, even with score 0."""
     authors = recommend_similar_authors(author, limit=limit)
     return authors[:limit]
 
 
-
-
+# Routers for book filter
 @router.get("/book_filter")
 def book_filter():
-    return FileResponse("../frontend/templates/book_filter.html")
+    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "book_filter.html")
+
 
 @router.get("/api/book", response_model=List[Book])
 async def get_similar_books(
@@ -67,7 +74,6 @@ async def get_similar_books(
     """
     Return a list of books similar to the given title using TF-IDF similarity.
     """
-    # Fetch and rank similar books via TF-IDF
     recommendations = recommend_similar_books(book, limit=limit)
     if not recommendations:
         raise HTTPException(
@@ -87,4 +93,3 @@ async def get_similar_books(
         )
         for rec in recommendations
     ]
-
