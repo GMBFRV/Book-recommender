@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Author Details</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <button class="back-btn" onclick="window.history.back()">← Back</button>
+    <main class="detail-main">
+      <div class="author-detail-container">
+        <div id="author-detail" class="author-detail">
+          <!-- Content will be filled by author_detail.js -->
+        </div>
+      </div>
+      <div class="author-books-section">
+        <h2>Top Books</h2>
+        <div id="author-books" class="books-grid"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/author_detail.js"></script>
+</body>
+</html>

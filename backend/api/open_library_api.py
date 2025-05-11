@@ -24,6 +24,37 @@ OL_AUTHOR_DETAILS_URL = 'https://openlibrary.org/authors/{author_key}.json'
 OL_SUBJECT_URL = 'https://openlibrary.org/subjects/{subject}.json'
 
 
+def get_book_details(work_key: str) -> dict:
+    """
+    Fetch full work info from OpenLibrary and normalize it.
+    """
+    # work_key should be like "OL12345W" (no "/works/" prefix)
+    url = f"https://openlibrary.org/works/{work_key}.json"
+    resp = diploma_session.get(url, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+
+    # pull authors list
+    authors = []
+    for a in data.get("authors", []):
+        auth_key = a.get("author", {}).get("key", "").split("/")[-1]
+        det = get_author_details(auth_key)
+        if det:
+            authors.append(det.name)
+
+    return {
+        "key": work_key,
+        "title": data.get("title"),
+        "description": (
+            data.get("description", {}).get("value")
+            if isinstance(data.get("description"), dict)
+            else data.get("description")
+        ),
+        "subjects": data.get("subjects", []),
+        "authors": authors,
+        "covers": data.get("covers", []),  # list of cover_ids
+    }
+
 def search_books_ol(
     genres: Union[str, List[str]],
     min_reviews: int = 50,
@@ -75,28 +106,28 @@ def get_subjects_from_works(author_key: str) -> List[str]:
 
 @lru_cache(maxsize=128)
 def get_author_details(author_key: str) -> Optional[Author]:
-    """Fetch detailed author info and subjects, caching results."""
     try:
         key = author_key.split('/')[-1]
         url = OL_AUTHOR_DETAILS_URL.format(author_key=key)
         data = diploma_session.get(url, timeout=15).json()
-        # prefer top_subjects, then subjects, then derive from works
-        subs = data.get('top_subjects') or data.get('subjects') or get_subjects_from_works(key) or ['science']
-        subjects = [s.lower() for s in subs][:5]
+
+        # Get author photo if available
+        photos = data.get('photos', [])
+        photo_id = photos[0] if photos else None
+
         return Author(
             key=key,
             name=data.get('name', 'Unknown Author'),
             birth_date=data.get('birth_date'),
             death_date=data.get('death_date'),
-            bio=(data.get('bio', {}).get('value')
-                 if isinstance(data.get('bio'), dict)
-                 else data.get('bio')),
+            bio=(data.get('bio', {}).get('value') if isinstance(data.get('bio'), dict) else data.get('bio')),
             works_count=data.get('works_count'),
-            subjects=subjects,
+            subjects=data.get('top_subjects', [])[:5],
             links=data.get('links', []),
             top_work=data.get('top_work'),
             alternate_names=data.get('alternate_names', []),
-            rating=data.get('ratings_average')
+            rating=data.get('ratings_average'),
+            photo_id=photo_id  # Add this new field
         )
     except Exception as e:
         logger.error(f'Error fetching author details for {author_key}: {e}')

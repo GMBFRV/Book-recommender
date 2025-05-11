@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Book Details</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <button class="back-btn" onclick="window.history.back()">← Back</button>
+    <main class="detail-main">
+      <div class="book-detail-container">
+        <div id="book-detail" class="book-detail">
+          <!-- Content will be filled by detail.js -->
+        </div>
+      </div>
+      <div class="recommendations-section">
+        <h2>You might also like</h2>
+        <div id="recommendations" class="recommendations-grid"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/detail.js"></script>
+</body>
+</html>

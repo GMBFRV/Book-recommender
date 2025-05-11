@@ -30,3 +30,8 @@ class Author(BaseModel):
     alternate_names: List[str] = []
     rating: Optional[float] = None
     similarity_score: Optional[float] = None
+    photo_id: Optional[int] = None
+
+class BookDetailSchema(BaseModel):
+    detail: dict
+    recommendations: List[Book]
