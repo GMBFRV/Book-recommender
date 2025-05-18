@@ -11,8 +11,6 @@ class Book(BaseModel):
     cover_id: Optional[int] = None
     publish_year: Optional[int] = None
 
-
-    # Explicitly include computed properties in dict/json
     def dict(self, **kwargs):
         data = super().dict(**kwargs)
         return data

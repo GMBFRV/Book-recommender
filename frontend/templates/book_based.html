@@ -11,27 +11,29 @@
     <header class="header">
       <button class="back-btn" onclick="window.history.back()">← Back</button>
       <h1>Find Similar Books</h1>
-      <p>Enter a book title below and we'll recommend similar reads based on subject overlap.</p>
+      <p>Enter a book title below and we'll recommend similar reads</p>
     </header>
 
     <main class="main-content">
-      <div class="search-box">
-        <input
-          type="text"
-          id="bookTitleInput"
-          class="text-input"
-          placeholder="Type a book title..."
-        />
+      <div class="book-search-container">
+        <div class="book-search-box">
+          <input
+            type="text"
+            id="bookTitleInput"
+            placeholder="Type a book title..."
+          />
+          <div id="bookSuggestions" class="suggestions-dropdown"></div>
+        </div>
         <button id="searchBtn" class="action-btn">Search</button>
       </div>
 
       <div class="results-container">
-        <h2>Recommendations</h2>
-        <ul id="results" class="results-list"></ul>
+        <div id="results" class="results-grid"></div>
       </div>
     </main>
   </div>
 
-  <script src="/static/js/search.js"></script>
+  <script src="/static/js/search_autocomplete.js"></script>
+  <script src="/static/js/results.js"></script>
 </body>
 </html>

@@ -1,3 +1,7 @@
+/*
+---------------------------------------- Genre-based -----------------------------------------------------------------
+ */
+
 document.addEventListener("DOMContentLoaded", () => {
   const genreButtons = document.querySelectorAll(".genre-btn");
   const continueBtn = document.getElementById("continueBtn");
@@ -84,7 +88,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// Author search functionality
+/*
+---------------------------------------- Author-based -----------------------------------------------------------------
+ */
+
 document.addEventListener("DOMContentLoaded", () => {
     const searchAuthorBtn = document.getElementById("searchAuthorBtn");
     const authorInput = document.getElementById("authorInput");
@@ -151,7 +158,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 });
 
-
+/*
+---------------------------------------- Book-based -----------------------------------------------------------------
+ */
 document.addEventListener("DOMContentLoaded", () => {
   const bookInput = document.getElementById("bookTitleInput");
   const searchBtn = document.getElementById("searchBtn");
@@ -174,7 +183,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       resultsContainer.innerHTML = "";
 
-// In the book filter section of search.js, replace the card creation code with:
 books.forEach(book => {
     const card = document.createElement("div");
     card.className = "book-card";

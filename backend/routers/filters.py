@@ -2,7 +2,7 @@ import traceback
 from typing import List
 from pathlib import Path
 from backend.api.open_library_api import get_author_details, logger, get_book_details, find_similar_books, \
-    diploma_session, OL_AUTHOR_WORKS_URL
+    diploma_session, OL_AUTHOR_WORKS_URL, OL_AUTHORS_URL, OL_SEARCH_URL
 from backend.models import Book, Author, BookDetailSchema
 from fastapi import APIRouter, HTTPException, Query
 from starlette.responses import FileResponse
@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 @router.get("/genre_filter")
 def get_genre_filter():
-    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "genre_filter.html")
+    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "genre_based.html")
 
 
 @router.get("/api/genre_filter", response_model=List[Book])
@@ -50,7 +50,7 @@ async def genre_filter_api(
 @router.get("/book/{work_key}")
 def book_detail_page(work_key: str):
     # serve the HTML template
-    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "book_detail.html")
+    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "book_details.html")
 
 
 
@@ -93,7 +93,7 @@ async def book_detail_api(
 
 @router.get("/author_filter")
 def get_author_filter():
-    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "author_filter.html")
+    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "author_based.html")
 
 
 @router.get("/api/author", response_model=List[Author])
@@ -106,11 +106,30 @@ async def get_author_recommendations(
     return authors[:limit]
 
 
-# Add these new endpoints to filters.py
+@router.get("/api/author_suggest")
+async def author_suggestions(
+        query: str = Query(..., min_length=2),
+        limit: int = Query(5, ge=1, le=10)
+):
+    """Return author name suggestions based on partial match."""
+    try:
+        params = {
+            'q': query,
+            'limit': limit,
+            'fields': 'name,key'
+        }
+        resp = diploma_session.get(OL_AUTHORS_URL, params=params, timeout=5)
+        resp.raise_for_status()
+        docs = resp.json().get('docs', [])
+
+        return [{'name': doc['name']} for doc in docs if 'name' in doc]
+    except Exception as e:
+        logger.error(f'Error fetching author suggestions: {e}')
+        return []
 
 @router.get("/author/{author_key}")
 def author_detail_page(author_key: str):
-    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "author_detail.html")
+    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "author_details.html")
 
 
 @router.get("/api/author/{author_key}", response_model=Author)
@@ -149,7 +168,7 @@ async def get_author_works(author_key: str, limit: int = Query(5, ge=1, le=20)):
 
 @router.get("/book_filter")
 def book_filter():
-    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "book_filter.html")
+    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "book_based.html")
 
 
 @router.get("/api/book", response_model=List[Book])
@@ -179,3 +198,29 @@ async def get_similar_books(
         )
         for rec in recommendations
     ]
+
+
+@router.get("/api/book_suggest")
+async def book_suggestions(
+        query: str = Query(..., min_length=2),
+        limit: int = Query(5, ge=1, le=10)
+):
+    """Return book title suggestions based on partial match."""
+    try:
+        params = {
+            'q': query,
+            'limit': limit,
+            'fields': 'title,author_name,cover_i'
+        }
+        resp = diploma_session.get(OL_SEARCH_URL, params=params, timeout=5)
+        resp.raise_for_status()
+        docs = resp.json().get('docs', [])
+
+        return [{
+            'title': doc.get('title'),
+            'author_name': doc.get('author_name', []),
+            'cover_id': doc.get('cover_i')
+        } for doc in docs if doc.get('title')]
+    except Exception as e:
+        logger.error(f'Error fetching book suggestions: {e}')
+        return []
