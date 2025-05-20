@@ -1,5 +1,5 @@
 import math
-from typing import List, Dict, Optional, Union, Set
+from typing import List, Dict, Optional, Union, Set, Literal
 import requests
 import logging
 from collections import Counter
@@ -7,6 +7,7 @@ from itertools import combinations, islice
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
+import re
 
 from backend.models import Author
 
@@ -24,17 +25,18 @@ OL_AUTHOR_DETAILS_URL = 'https://openlibrary.org/authors/{author_key}.json'
 OL_SUBJECT_URL = 'https://openlibrary.org/subjects/{subject}.json'
 
 
-def get_book_details(work_key: str) -> dict:
+def get_book_details(work_key: str) -> Dict:
     """
-    Fetch full work info from OpenLibrary and normalize it.
+    Fetch full work info from OpenLibrary and normalize it,
+    but always take the description from Wikipedia.
     """
     # work_key should be like "OL12345W" (no "/works/" prefix)
-    url = f"https://openlibrary.org/works/{work_key}.json"
+    url  = f"https://openlibrary.org/works/{work_key}.json"
     resp = diploma_session.get(url, timeout=10)
     resp.raise_for_status()
     data = resp.json()
 
-    # pull authors list
+    # Build authors list by fetching their details
     authors = []
     for a in data.get("authors", []):
         auth_key = a.get("author", {}).get("key", "").split("/")[-1]
@@ -42,17 +44,17 @@ def get_book_details(work_key: str) -> dict:
         if det:
             authors.append(det.name)
 
+    # Fetch description from Wikipedia instead of OpenLibrary
+    raw_wiki    = fetch_wikipedia_summary(data.get("title", ""))
+    description = raw_wiki.strip() if raw_wiki else None
+
     return {
-        "key": work_key,
-        "title": data.get("title"),
-        "description": (
-            data.get("description", {}).get("value")
-            if isinstance(data.get("description"), dict)
-            else data.get("description")
-        ),
-        "subjects": data.get("subjects", []),
-        "authors": authors,
-        "covers": data.get("covers", []),  # list of cover_ids
+        "key":         work_key,
+        "title":       data.get("title"),
+        "description": description,      # ← from Wikipedia only
+        "subjects":    data.get("subjects", []),
+        "authors":     authors,
+        "covers":      data.get("covers", []),  # list of cover_ids
     }
 
 def search_books_ol(
@@ -103,16 +105,53 @@ def get_subjects_from_works(author_key: str) -> List[str]:
         logger.error(f'Error fetching works subjects for {author_key}: {e}')
         return []
 
+def clean_bio(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    text = raw
+
+    # 1) Удалить wiki-сноски вида [1], [2][3]…
+    text = re.sub(r'\[\d+\](?:\[\d+\])*', '', text)
+    # 2) Удалить определения ссылок вида [1]: http://…
+    text = re.sub(r'\[\d+\]:\s*\S+', '', text)
+    # 3) Удалить оставшиеся URL-ы (http:// or https://) вместе с возможным ведущим «: »
+    text = re.sub(r'\s*:?https?://\S+', '', text)
+    # 4) Удалить любые фрагменты «Source» в конце, внутри любых скобок или без них
+    text = re.sub(
+        r'\s*(?:\([^)]*?source[^)]*?\)|source)\s*\.?\s*$',
+        '',
+        text,
+        flags=re.IGNORECASE
+    )
+    # 5) Убрать двоеточие в конце строки, если вдруг осталось
+    text = re.sub(r':\s*$', '', text)
+    # 6) Свести несколько пробелов/переносов в один пробел и обрезать по краям
+    text = re.sub(r'\s{2,}', ' ', text).strip()
+
+    return text or None
+
+def fetch_wikipedia_summary(name: str) -> Optional[str]:
+    """
+    Fetch the plain-text summary from Wikipedia REST API.
+    """
+    title = name.replace(' ', '_')
+    url   = f'https://en.wikipedia.org/api/rest_v1/page/summary/{title}'
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        return r.json().get('extract')  # already plain text
+    except Exception:
+        return None
 
 @lru_cache(maxsize=128)
 def get_author_details(author_key: str) -> Optional[Author]:
     try:
-        key = author_key.split('/')[-1]
-        url = OL_AUTHOR_DETAILS_URL.format(author_key=key)
+        key  = author_key.split('/')[-1]
+        url  = OL_AUTHOR_DETAILS_URL.format(author_key=key)
         data = diploma_session.get(url, timeout=15).json()
-
-        # Get author photo if available
-        photos = data.get('photos', [])
+        raw_wiki = fetch_wikipedia_summary(data.get('name', ''))
+        bio = raw_wiki.strip() if raw_wiki else None
+        photos   = data.get('photos', [])
         photo_id = photos[0] if photos else None
 
         return Author(
@@ -120,18 +159,19 @@ def get_author_details(author_key: str) -> Optional[Author]:
             name=data.get('name', 'Unknown Author'),
             birth_date=data.get('birth_date'),
             death_date=data.get('death_date'),
-            bio=(data.get('bio', {}).get('value') if isinstance(data.get('bio'), dict) else data.get('bio')),
+            bio=bio,
             works_count=data.get('works_count'),
             subjects=data.get('top_subjects', [])[:5],
             links=data.get('links', []),
             top_work=data.get('top_work'),
             alternate_names=data.get('alternate_names', []),
             rating=data.get('ratings_average'),
-            photo_id=photo_id  # Add this new field
+            photo_id=photo_id
         )
     except Exception as e:
         logger.error(f'Error fetching author details for {author_key}: {e}')
         return None
+
 
 
 def find_similar_authors(target_author: str, limit: int = 5) -> List[Dict]:
