@@ -6,6 +6,7 @@ from backend.api.open_library_api import get_author_details, logger, get_book_de
 from backend.models import Book, Author, BookDetailSchema
 from fastapi import APIRouter, HTTPException, Query
 from starlette.responses import FileResponse
+from langdetect import detect, LangDetectException
 from backend.recommendation.recommender import (
     recommend_by_genre,
     recommend_similar_authors,
@@ -140,26 +141,57 @@ async def get_author_details_api(author_key: str):
     return author
 
 
+from langdetect import detect, LangDetectException
+
+
 @router.get("/api/author/{author_key}/works", response_model=List[Book])
-async def get_author_works(author_key: str, limit: int = Query(5, ge=1, le=20)):
+async def get_author_works(
+        author_key: str,
+        limit: int = Query(5, ge=1, le=20),
+        languages: str = Query("en,ru", description="Filter by title languages (comma-separated)")
+):
     try:
+        allowed_langs = [lang.strip() for lang in languages.split(",")]
         url = OL_AUTHOR_WORKS_URL.format(author_key=author_key)
-        params = {'limit': limit, 'fields': 'title,key,cover_i,ratings_average'}
+        params = {
+            'limit': 50,
+            'fields': 'title,key,cover_i,covers,ratings_average,first_publish_year'
+        }
         resp = diploma_session.get(url, params=params, timeout=10)
         resp.raise_for_status()
-        works = resp.json().get('entries', [])
+        data = resp.json()
 
-        return [
-            Book(
+        books = []
+        for work in data.get('entries', []):
+            title = work.get('title')
+            if not title:
+                continue
+
+            try:
+                title_lang = detect(title)
+            except LangDetectException:
+                title_lang = None
+
+            if title_lang not in allowed_langs:
+                continue
+
+            cover_id = work.get('covers', [None])[0] or work.get('cover_i')
+
+            books.append(Book(
                 key=work.get('key', '').split('/')[-1],
-                title=work.get('title'),
-                cover_id=work.get('cover_i'),
+                title=title,
+                cover_id=cover_id,
                 rating=work.get('ratings_average')
-            )
-            for work in works
-        ]
+            ))
+
+            if len(books) >= limit:
+                break
+
+        logger.info(f"Returning {len(books)} books filtered by languages {allowed_langs}")
+        return books
+
     except Exception as e:
-        logger.error(f"Error fetching works for author {author_key}: {e}")
+        logger.error(f"Error fetching works: {str(e)}", exc_info=True)
         raise HTTPException(500, "Failed to fetch author's works")
 
 #

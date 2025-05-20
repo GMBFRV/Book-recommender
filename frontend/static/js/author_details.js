@@ -28,10 +28,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     let html = `
       <div class="author-header">
         <div class="author-photo-container">
-          ${author.photo_id ? 
-            `<img src="https://covers.openlibrary.org/a/olid/${author.key}-L.jpg" 
-                  alt="${author.name}" class="author-photo-large">` : 
-            '<div class="author-photo-large placeholder"></div>'}
+          ${author.photo_id
+            ? `<img 
+                src="https://covers.openlibrary.org/a/olid/${author.key}-L.jpg" 
+                alt="${author.name}" 
+                class="author-photo-large">`
+            : `<img 
+                src="/static/images/no-photo-author.jpg" 
+                alt="Default Author" 
+                class="author-photo-large placeholder">`
+          }
         </div>
         <div class="author-info">
           <h1 class="author-name">${author.name}</h1>
@@ -55,22 +61,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     authorEl.innerHTML = html;
 
     // Fetch author's books
-    const booksResp = await fetch(`/api/author/${authorKey}/works`);
+    const booksResp = await fetch(`/api/author/${authorKey}/works?languages=en,ru`);
     if (!booksResp.ok) throw new Error(booksResp.statusText);
     const books = await booksResp.json();
 
     // Build books list
     if (books.length) {
-      let booksHtml = books.map(book => `
+      let booksHtml = books.map(b => `
         <div class="book-card">
-          <a href="/book/${book.key.replace("/works/","")}">
-            ${book.cover_id ?
-              `<img src="https://covers.openlibrary.org/b/id/${book.cover_id}-M.jpg"
-                   alt="${book.title}" class="book-cover">` : 
-              '<div class="book-cover placeholder"></div>'}
+          <a href="/book/${b.key.replace("/works/","")}">
+            ${b.cover_id
+              ? `<img
+                   src="https://covers.openlibrary.org/b/id/${b.cover_id}-M.jpg"
+                    alt="${b.title}"
+                    class="book-cover">`
+              : `<img
+                   src="/static/images/no-cover-photo.jpg"
+                    alt="Default cover"
+                    class="book-cover placeholder">`
+            }
             <div class="book-info">
-              <h4>${book.title}</h4>
-              ${book.rating ? `<p class="book-rating">★ ${book.rating.toFixed(1)}</p>` : ''}
+              <h4>${b.title}</h4>
+              ${b.rating ? `<p class="book-rating">★ ${b.rating.toFixed(1)}</p>` : ''}
             </div>
           </a>
         </div>

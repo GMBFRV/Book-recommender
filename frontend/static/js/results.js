@@ -1,6 +1,6 @@
 /*
----------------------------------------- Genre-based -----------------------------------------------------------------
- */
+---------------------------------------- Genre-based Filter (Updated) ----------------------------------------
+*/
 
 document.addEventListener("DOMContentLoaded", () => {
   const genreButtons = document.querySelectorAll(".genre-btn");
@@ -8,15 +8,72 @@ document.addEventListener("DOMContentLoaded", () => {
   const out = document.getElementById("results");
   let selectedGenres = new Set();
 
-  // Genre selection toggle
+  // Function to create a standardized book card element
+  function createBookCard(book) {
+    const card = document.createElement("div");
+    card.className = "book-card";
+
+    // Create the link wrapper
+    const link = document.createElement("a");
+    link.href = `/book/${book.key.replace("/works/","")}`;
+    link.className = "book-link";
+
+    // Book cover
+    if (book.cover_id) {
+      const img = document.createElement("img");
+      img.src = `https://covers.openlibrary.org/b/id/${book.cover_id}-M.jpg`;
+      img.alt = `Cover for ${book.title}`;
+      img.className = "book-cover";
+      img.loading = "lazy";
+      const wrapper = document.createElement("div");
+      wrapper.className = "cover-wrapper";
+      wrapper.appendChild(img);
+      link.appendChild(wrapper);
+
+    } else {
+      const placeholder = document.createElement("div");
+      placeholder.className = "book-cover placeholder";
+      link.appendChild(placeholder);
+    }
+
+    // Book information container
+    const info = document.createElement("div");
+    info.className = "book-info";
+
+    // Title
+    const h3 = document.createElement("h3");
+    h3.textContent = book.title || "No title available";
+    info.appendChild(h3);
+
+    // Authors
+    const pAuthor = document.createElement("p");
+    pAuthor.textContent = (book.authors || []).join(", ") || "Unknown author";
+    pAuthor.className = "book-authors";
+    info.appendChild(pAuthor);
+
+    // Rating (if available)
+    if (book.rating) {
+      const pRating = document.createElement("p");
+      pRating.textContent = `★ ${book.rating.toFixed(1)}`;
+      pRating.className = "book-rating";
+      info.appendChild(pRating);
+    }
+
+    link.appendChild(info);
+    card.appendChild(link);
+
+    return card;
+  }
+
+  // Handle genre button selection
   genreButtons.forEach(btn => {
     btn.addEventListener("click", () => {
-      const g = btn.dataset.genre;
-      if (selectedGenres.has(g)) {
-        selectedGenres.delete(g);
+      const genre = btn.dataset.genre;
+      if (selectedGenres.has(genre)) {
+        selectedGenres.delete(genre);
         btn.classList.remove("selected");
       } else {
-        selectedGenres.add(g);
+        selectedGenres.add(genre);
         btn.classList.add("selected");
       }
       continueBtn.disabled = selectedGenres.size === 0;
@@ -29,64 +86,40 @@ document.addEventListener("DOMContentLoaded", () => {
     const params = new URLSearchParams();
     genresArray.forEach(g => params.append("genres", g));
 
+    // Display loading indicator
     out.innerHTML = `
-        <div class="loading">
+        <div class="loading-container">
+            <div class="loading">
             <div class="loading-spinner"></div>
             <div class="loading-message">Searching for books...</div>
+            </div>
         </div>
-    `;
+     `;
+
 
     try {
       const resp = await fetch(`/api/genre_filter?${params.toString()}`);
       if (!resp.ok) throw new Error(`Error ${resp.status}`);
       const books = await resp.json();
 
+      // Handle no results case
       if (!books.length) {
         out.innerHTML = '<div class="empty-message">No books found matching your selected genres.</div>';
         return;
       }
 
+      // Clear container and append book cards
       out.innerHTML = "";
       books.forEach(book => {
-        const card = document.createElement("div");
-        card.className = "book-card";
-
-        // Title
-        const h3 = document.createElement("h3");
-        h3.textContent = book.title || "No title available";
-        card.appendChild(h3);
-
-        // Authors
-        const pa = document.createElement("p");
-        pa.textContent = (book.authors || []).join(", ") || "Author unknown";
-        card.appendChild(pa);
-
-        // Rating
-        const pr = document.createElement("p");
-        pr.textContent = `Rating: ${book.rating ?? "N/A"} (${book.rating_count ?? "N/A"} reviews)`;
-        card.appendChild(pr);
-
-        if (book.cover_id) {
-          const img = document.createElement("img");
-          img.src = `https://covers.openlibrary.org/b/id/${book.cover_id}-M.jpg`;
-          img.alt = `Cover for ${book.title}`;
-          img.loading = "lazy";
-          card.appendChild(img);
-        }
-
-        // wrap the card in a link to /book/{key}
-       const link = document.createElement("a");
-       link.href      = `/book/${book.key.replace("/works/","")}`;
-       link.className = "book-link";
-       link.appendChild(card);
-
-       out.appendChild(link);
+        out.appendChild(createBookCard(book));
       });
+
     } catch (err) {
       out.innerHTML = `<div class="error-message">Error: ${err.message}</div>`;
     }
   });
 });
+
 
 /*
 ---------------------------------------- Author-based -----------------------------------------------------------------
@@ -107,7 +140,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
-            authorResults.innerHTML = '<div class="loading-message">Searching for authors...</div>';
+                authorResults.innerHTML = `
+                    <div class="loading">
+                        <div class="loading-spinner"></div>
+                        <div class="loading-message">Searching for authors...</div>
+                   </div>
+                `;
+
 
             try {
                 const response = await fetch(`/api/author?author=${encodeURIComponent(authorName)}`);
@@ -129,16 +168,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 // In the author search results section
-            authorResults.innerHTML = `
+                authorResults.innerHTML = `
                 <h3>Authors similar to ${authorName}:</h3>
                 <div class="authors-grid">
                 ${authors.map(author => `
                     <div class="author-card">
                         <a href="/author/${author.key}">
-                            ${author.photo_id ? 
-                                `<img src="https://covers.openlibrary.org/a/olid/${author.key}-M.jpg" 
-                                    alt="${author.name}" class="author-photo">` : 
-                            '<div class="author-photo placeholder"></div>'}
+                            ${author.photo_id
+                                ? `<img src="https://covers.openlibrary.org/a/olid/${author.key}-M.jpg"
+                                    alt="${author.name}" class="author-photo">`
+                                : `<img src="/static/images/no-photo-author.jpg"
+                                    alt="Default author image" class="author-photo placeholder">`
+                            }
                         <h4>${author.name}</h4>
                         ${author.top_work ? `<p class="author-work">Known for: ${author.top_work}</p>` : ''}
                         ${author.rating ? `<p class="author-rating">Avg rating: ${author.rating.toFixed(1)}</p>` : ''}
@@ -172,7 +213,17 @@ document.addEventListener("DOMContentLoaded", () => {
       resultsContainer.innerHTML = '<div class="error-message">Please enter a book title</div>';
       return;
     }
-    resultsContainer.innerHTML = '<div class="loading-message">Searching for similar books...</div>';
+
+    resultsContainer.innerHTML = `
+        <div class="loading-container">
+            <div class="loading">
+            <div class="loading-spinner"></div>
+            <div class="loading-message">Searching for books...</div>
+            </div>
+        </div>
+    `;
+
+
     try {
       const response = await fetch(`/api/book?book=${encodeURIComponent(title)}`);
       if (!response.ok) throw new Error(`Error ${response.status}`);
@@ -192,14 +243,17 @@ books.forEach(book => {
     link.href = `/book/${book.key.replace("/works/","")}`;
     link.className = "book-link";
 
-    // Cover image
+    // Book cover
     if (book.cover_id) {
-        const img = document.createElement("img");
-        img.src = `https://covers.openlibrary.org/b/id/${book.cover_id}-M.jpg`;
-        img.alt = `Cover for ${book.title}`;
-        img.className = "book-cover";
-        img.loading = "lazy";
-        link.appendChild(img);
+      const img = document.createElement("img");
+      img.src = `https://covers.openlibrary.org/b/id/${book.cover_id}-M.jpg`;
+      img.alt = `Cover for ${book.title}`;
+      img.className = "book-cover";
+      img.loading = "lazy";
+      const wrapper = document.createElement("div");
+      wrapper.className = "cover-wrapper";
+      wrapper.appendChild(img);
+      link.appendChild(wrapper);
     } else {
         const placeholder = document.createElement("div");
         placeholder.className = "book-cover placeholder";

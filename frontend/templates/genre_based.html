@@ -4,12 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Genre Filter</title>
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/main.css">
+  <link rel="stylesheet" href="/static/css/user_input.css">
+  <link rel="stylesheet" href="/static/css/recommendation_results.css">
 </head>
 <body>
   <div class="container">
     <header class="header">
-      <button class="back-btn" onclick="window.history.back()">← Back</button>
+      <button class="back-btn" onclick="window.history.back()">
+        ← Back
+      </button>
+      <button class="home-btn" onclick="window.location.href='/'">
+        🏠 Home
+      </button>
       <h1>Select Your Favorite Genres</h1>
       <p>Choose the genres you're interested in and we'll find books for you</p>
     </header>
@@ -31,9 +38,8 @@
           <button id="continueBtn" disabled>Find Books</button>
         </div>
       </div>
-
       <div class="results-container">
-        <div id="results"></div>
+        <div id="results" class="results-grid"></div>
       </div>
     </main>
   </div>

@@ -4,15 +4,21 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Book Details</title>
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/main.css">
+  <link rel="stylesheet" href="/static/css/details_page.css">
+  <link rel="stylesheet" href="/static/css/user_input.css">
 </head>
 <body>
   <div class="container">
-    <button class="back-btn" onclick="window.history.back()">← Back</button>
+      <button class="back-btn" onclick="window.history.back()">
+        ← Back
+      </button>
+      <button class="home-btn" onclick="window.location.href='/'">
+        🏠 Home
+      </button>
     <main class="detail-main">
       <div class="book-detail-container">
         <div id="book-detail" class="book-detail">
-          <!-- Content will be filled by book_details.js -->
         </div>
       </div>
       <div class="recommendations-section">
