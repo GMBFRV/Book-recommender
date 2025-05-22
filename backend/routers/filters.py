@@ -12,6 +12,14 @@ from backend.recommendation.recommender import (
     recommend_similar_authors,
     recommend_similar_books
 )
+from backend.config import (
+    BOOKS_MIN_RATING_DEFAULT,
+    BOOKS_MIN_REVIEWS_DEFAULT,
+    BOOKS_PAGE_LIMIT_DEFAULT,
+    BOOKS_OFFSET_DEFAULT,
+    AUTHOR_LIMIT_DEFAULT,
+    BOOK_PAGE_LIMIT_DEFAULT
+)
 from pydantic import BaseModel
 
 router = APIRouter(tags=["filters"])
@@ -28,25 +36,38 @@ def get_genre_filter():
     return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "genre_based.html")
 
 
+from typing import List
+from fastapi import APIRouter, Query, HTTPException
+import logging
+
+from backend.api.open_library_api import search_books_ol
+from backend.models import Book  # ваш Pydantic-модель Book
+
+
 @router.get("/api/genre_filter", response_model=List[Book])
 async def genre_filter_api(
-    genres: List[str] = Query(..., description="Genres to filter"),
-    min_rating: float = Query(4.0, description="Minimum average rating"),
-    min_reviews: int = Query(5, description="Minimum review count"),
-    top_n: int = Query(20, description="Number of results to return")
+    genres: List[str] = Query(..., description="List of genres to filter by"),
+    min_rating: float = Query(
+        BOOKS_MIN_RATING_DEFAULT, description="Minimum average rating"
+    ),
+    min_reviews: int = Query(
+        BOOKS_MIN_REVIEWS_DEFAULT, description="Minimum number of reviews"
+    ),
+    offset: int = Query(
+        BOOKS_OFFSET_DEFAULT, ge=0, description="Pagination offset"
+    ),
+    limit: int = Query(
+        BOOKS_PAGE_LIMIT_DEFAULT, gt=0, le=100, description="Number of books to return"
+    ),
 ):
-    try:
-        return recommend_by_genre(
-            genres=genres,
-            min_rating=min_rating,
-            min_reviews=min_reviews,
-            limit=top_n
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Recommendation failed: {str(e)}"
-        )
+    return recommend_by_genre(
+        genres=genres,
+        min_rating=min_rating,
+        min_reviews=min_reviews,
+        limit=limit,
+        offset=offset,
+    )
+
 
 @router.get("/book/{work_key}")
 def book_detail_page(work_key: str):
@@ -100,7 +121,7 @@ def get_author_filter():
 @router.get("/api/author", response_model=List[Author])
 async def get_author_recommendations(
     author: str = Query(..., min_length=2),
-    limit: int = Query(10, ge=1, le=20)
+    limit: int = Query(AUTHOR_LIMIT_DEFAULT, ge=1, le=20)
 ):
     """Return similar authors, even with score 0."""
     authors = recommend_similar_authors(author, limit=limit)

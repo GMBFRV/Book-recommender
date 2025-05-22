@@ -1,4 +1,7 @@
-# Content-based recommendation system
+# ----------------------------------------------------------------------------------------------------------------------
+#                                               Content-based recommender
+# ----------------------------------------------------------------------------------------------------------------------
+import math
 from typing import List, Dict, Set
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -8,43 +11,69 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 logger = logging.getLogger(__name__)
+from backend.config import (
+    BOOKS_MIN_RATING_DEFAULT,
+    BOOKS_MIN_REVIEWS_DEFAULT,
+    BOOKS_PAGE_LIMIT_DEFAULT,
+    BOOKS_OFFSET_DEFAULT,
+    AUTHOR_LIMIT_DEFAULT,
+    BOOK_PAGE_LIMIT_DEFAULT
+)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+#                                               Genre-based
+# ----------------------------------------------------------------------------------------------------------------------
 
 def recommend_by_genre(
-        genres: List[str],
-        min_rating: float = 4.0,
-        min_reviews: int = 50,
-        limit: int = 20
+    genres: List[str],
+    min_rating: float = BOOKS_MIN_RATING_DEFAULT,
+    min_reviews: int = BOOKS_MIN_REVIEWS_DEFAULT,
+    limit: int = BOOKS_PAGE_LIMIT_DEFAULT,
+    offset: int = BOOKS_OFFSET_DEFAULT
 ) -> List[Book]:
     """
-    Recommends books in specified genres with rating >= min_rating.
-    Returns List[Book] ordered by rating (highest first).
+    Recommends exactly `limit` books in specified genres with rating >= min_rating.
     """
-    # 1. Fetch books from Open Library API
-    raw_books = search_books_ol(
-        genres=genres,
-        min_reviews=min_reviews,
-        limit=limit
-    )
+    collected: List[Book] = []
+    current_offset = offset
 
-    # 2. Convert to Book objects and apply rating filter
-    books = []
-    for b in raw_books:
-        book = Book(
-            key=b['key'],
-            title=b.get('title', 'Unknown'),
-            authors=b.get('author_name', []),
-            genres=b.get('subject', []),
-            rating=b.get('ratings_average'),
-            rating_count=b.get('ratings_count'),
-            cover_id=b.get('cover_i'),
-            publish_year=b.get('first_publish_year')
+    while len(collected) < limit:
+        raw_batch = search_books_ol(
+            genres=genres,
+            min_reviews=min_reviews,
+            limit=limit,
+            offset=current_offset
         )
-        if book.rating and book.rating >= min_rating:
-            books.append(book)
+        if not raw_batch:
+            break
 
-    # 3. Sort by rating (descending)
-    return sorted(books, key=lambda x: x.rating, reverse=True)[:limit]
+        for item in raw_batch:
+            avg = item.get("ratings_average") or 0
+            if avg >= min_rating:
+                collected.append(Book(
+                    key=item["key"],
+                    title=item.get("title", "Unknown"),
+                    authors=item.get("author_name", []),
+                    cover_id=item.get("cover_i"),
+                    rating=avg,
+                    rating_count=item.get("ratings_count", 0),
+                    genres=item.get("subject", []),
+                    publish_year=item.get("first_publish_year")
+                ))
+                if len(collected) == limit:
+                    break
 
+        if len(collected) < limit:
+            current_offset += len(raw_batch)
+
+    collected.sort(key=lambda x: x.rating or 0, reverse=True)
+    return collected[:limit]
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+#                                               Author-based
+# ----------------------------------------------------------------------------------------------------------------------
 
 def calculate_similarity(target_subjects: Set[str], candidate_subjects: List[str]) -> float:
     """Calculate meaningful similarity score (0-1)"""
@@ -60,7 +89,7 @@ def calculate_similarity(target_subjects: Set[str], candidate_subjects: List[str
     return min(1.0, base_score)
 
 
-def recommend_similar_authors(target_author: str, limit: int) -> List[Author]:
+def recommend_similar_authors(target_author: str, limit: AUTHOR_LIMIT_DEFAULT) -> List[Author]:
     """Get similar authors with parallel detail fetching"""
     start = time.perf_counter()
     logger.info(f"Starting recommendation for author: {target_author}")
@@ -90,36 +119,69 @@ def recommend_similar_authors(target_author: str, limit: int) -> List[Author]:
     logger.info(f"recommend_similar_authors took {duration:.2f}s")
     return sorted(results, key=lambda x: x.similarity_score, reverse=True)[:limit]
 
+
+# ----------------------------------------------------------------------------------------------------------------------
+#                                               Book-based
+# ----------------------------------------------------------------------------------------------------------------------
+
 def recommend_similar_books(
     target_book: str,
-    limit: int = 5
+    limit: int = 10
 ) -> List[Dict]:
-    """
-    Takes raw books from find_similar_books, builds a TF-IDF on
-    [title + subjects + author_name], calculates cosine similarity with the target book,
-    sorts and returns the top-N.
-    """
-    raw = find_similar_books(target_book)
-    if not raw:
-        return []
-
-    # 1) Строим тексты: первая запись — целевая книга
     def doc_to_text(doc: Dict) -> str:
         parts = []
-        if t := doc.get('title'): parts.append(t)
+        if t := doc.get('title'):
+            parts.append(t)
         for s in doc.get('subject', []):
-            if isinstance(s, str): parts.append(s)
+            if isinstance(s, str):
+                parts.append(s)
         for a in doc.get('author_name', []):
-            if isinstance(a, str): parts.append(a)
+            if isinstance(a, str):
+                parts.append(a)
         return " ".join(parts)
 
-    texts = [doc_to_text(raw[0])] + [doc_to_text(d) for d in raw[1:]]
-    # 2) Векторизуем и считаем косинус
+    offset = 0
+    all_candidates = []
+    seen_keys = set()
+    target_doc = None
+
+    # Iteratively fetch similar books using offset until we reach the desired limit
+    while len(all_candidates) < limit:
+        batch = find_similar_books(target_book, limit=limit, offset=offset)
+        if not batch:
+            break
+
+        # On the first iteration, cache the reference (target) book
+        if offset == 0 and batch:
+            target_doc = getattr(find_similar_books, "_target_cache", None)
+
+        # Filter out duplicates
+        for doc in batch:
+            key = doc.get("key")
+            if key and key not in seen_keys:
+                seen_keys.add(key)
+                all_candidates.append(doc)
+                if len(all_candidates) == limit:
+                    break
+
+        offset += len(batch)
+
+    if not target_doc or not all_candidates:
+        return []
+
+    # Build TF-IDF vectors for the target and candidate books
+    texts = [doc_to_text(target_doc)] + [doc_to_text(doc) for doc in all_candidates]
     vectorizer = TfidfVectorizer()
     tfidf = vectorizer.fit_transform(texts)
+
+    # Compute cosine similarity between the target book and all candidates
     sims = cosine_similarity(tfidf[0:1], tfidf[1:]).flatten()
-    # 3) Собираем и сортируем
+
+    # Attach similarity scores to candidates
     scored = []
-    for doc, sim in zip(raw[1:], sims):
-        scored.append({**doc, 'score': float(sim)})
-    return sorted(scored, key=lambda x: x['score'], reverse=True)[:limit]
+    for doc, sim in zip(all_candidates, sims):
+        scored.append({**doc, "score": float(sim)})
+
+    # Sort candidates by similarity score and return up to the requested limit
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:limit]

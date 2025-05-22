@@ -6,7 +6,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const genreButtons = document.querySelectorAll(".genre-btn");
   const continueBtn = document.getElementById("continueBtn");
   const out = document.getElementById("results");
-  let selectedGenres = new Set();
+    let selectedGenres = new Set();
+    let offset = 0;
+    const limit = 20;
 
   // Function to create a standardized book card element
   function createBookCard(book) {
@@ -81,43 +83,74 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Handle "Find Books" button click
-  continueBtn.addEventListener("click", async () => {
+   continueBtn.addEventListener("click", () => {
+    offset = 0;                  // при новом поиске начинаем сначала
+    out.innerHTML = "";          // чистим результаты
+    loadMoreBtn.hidden = true;   // прячем Load More, пока нет ответа
+    fetchBooks();
+  });
+
+  // Вешаем на “Load More”
+  loadMoreBtn.addEventListener("click", () => {
+    fetchBooks();
+  });
+
+  // Универсальная функция запроса
+  async function fetchBooks() {
     const genresArray = Array.from(selectedGenres);
     const params = new URLSearchParams();
     genresArray.forEach(g => params.append("genres", g));
+    params.append("offset", offset);
+    params.append("limit", limit);
 
-    // Display loading indicator
-    out.innerHTML = `
+    // Показываем индикатор (для первого запроса)
+    if (offset === 0) {
+      out.innerHTML = `
         <div class="loading-container">
-            <div class="loading">
+          <div class="loading">
             <div class="loading-spinner"></div>
             <div class="loading-message">Searching for books...</div>
-            </div>
-        </div>
-     `;
-
+          </div>
+        </div>`;
+    }
 
     try {
       const resp = await fetch(`/api/genre_filter?${params.toString()}`);
       if (!resp.ok) throw new Error(`Error ${resp.status}`);
       const books = await resp.json();
 
-      // Handle no results case
-      if (!books.length) {
+      // Если первый запрос и нет результатов
+      if (offset === 0 && books.length === 0) {
         out.innerHTML = '<div class="empty-message">No books found matching your selected genres.</div>';
         return;
       }
 
-      // Clear container and append book cards
-      out.innerHTML = "";
+      // Убираем индикатор (после первого запроса)
+      if (offset === 0) out.innerHTML = "";
+
+      // Добавляем карточки
       books.forEach(book => {
         out.appendChild(createBookCard(book));
       });
 
+      offset += books.length;   // сдвигаем offset на число реально полученных
+
+      // Если получили меньше pageSize — дальше нечего грузить
+      if (books.length < limit) {
+        loadMoreBtn.hidden = true;
+      } else {
+        loadMoreBtn.hidden = false;
+      }
     } catch (err) {
-      out.innerHTML = `<div class="error-message">Error: ${err.message}</div>`;
+      if (offset === 0) {
+        out.innerHTML = `<div class="error-message">Error: ${err.message}</div>`;
+      } else {
+        // при загрузке следующей порции можно просто отключить кнопку
+        loadMoreBtn.hidden = true;
+        console.error(err);
+      }
     }
-  });
+  }
 });
 
 

@@ -8,10 +8,15 @@ from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
 import re
-
 from backend.models import Author
-
 logger = logging.getLogger(__name__)
+
+from backend.config import (
+    BOOKS_MIN_REVIEWS_DEFAULT,
+    BOOKS_PAGE_LIMIT_DEFAULT,
+    BOOKS_OFFSET_DEFAULT,
+    AUTHOR_LIMIT_DEFAULT
+)
 
 # Global HTTP session for connection pooling
 diploma_session = requests.Session()
@@ -57,34 +62,42 @@ def get_book_details(work_key: str) -> Dict:
         "covers":      data.get("covers", []),  # list of cover_ids
     }
 
+
+
 def search_books_ol(
     genres: Union[str, List[str]],
-    min_reviews: int = 50,
-    limit: int = 100,
+    min_reviews: int = BOOKS_MIN_REVIEWS_DEFAULT,
+    limit: int = BOOKS_PAGE_LIMIT_DEFAULT,
+    offset: int = BOOKS_OFFSET_DEFAULT,
 ) -> List[Dict]:
     if isinstance(genres, str):
         genre_list = [genres]
     else:
         genre_list = genres
+
     subject_query = ' AND '.join(f'subject:{g}' for g in genre_list)
     params = {
         'q': subject_query,
         'ratings_count': f'[{min_reviews} TO *]',
         'limit': limit,
+        'offset': offset,
         'fields': ','.join([
-            'key', 'title', 'subtitle', 'author_name',
-            'first_publish_year', 'edition_count', 'publisher',
-            'language', 'subject', 'cover_i', 'ratings_count',
-            'ratings_average', 'isbn'
+            'key','title','subtitle','author_name',
+            'first_publish_year','edition_count','publisher',
+            'language','subject','cover_i','ratings_count',
+            'ratings_average','isbn'
         ]),
     }
+
     try:
         resp = requests.get(OL_SEARCH_URL, params=params, timeout=15)
         resp.raise_for_status()
         return resp.json().get('docs', [])
     except Exception as e:
-        logger.error(f'Error searching books: {e}')
+        logger.error(f"Error searching books: {e}")
         return []
+
+
 
 @lru_cache(maxsize=128)
 def get_subjects_from_works(author_key: str) -> List[str]:
@@ -105,30 +118,6 @@ def get_subjects_from_works(author_key: str) -> List[str]:
         logger.error(f'Error fetching works subjects for {author_key}: {e}')
         return []
 
-def clean_bio(raw: Optional[str]) -> Optional[str]:
-    if not raw:
-        return None
-    text = raw
-
-    # 1) Удалить wiki-сноски вида [1], [2][3]…
-    text = re.sub(r'\[\d+\](?:\[\d+\])*', '', text)
-    # 2) Удалить определения ссылок вида [1]: http://…
-    text = re.sub(r'\[\d+\]:\s*\S+', '', text)
-    # 3) Удалить оставшиеся URL-ы (http:// or https://) вместе с возможным ведущим «: »
-    text = re.sub(r'\s*:?https?://\S+', '', text)
-    # 4) Удалить любые фрагменты «Source» в конце, внутри любых скобок или без них
-    text = re.sub(
-        r'\s*(?:\([^)]*?source[^)]*?\)|source)\s*\.?\s*$',
-        '',
-        text,
-        flags=re.IGNORECASE
-    )
-    # 5) Убрать двоеточие в конце строки, если вдруг осталось
-    text = re.sub(r':\s*$', '', text)
-    # 6) Свести несколько пробелов/переносов в один пробел и обрезать по краям
-    text = re.sub(r'\s{2,}', ' ', text).strip()
-
-    return text or None
 
 def fetch_wikipedia_summary(name: str) -> Optional[str]:
     """
@@ -174,7 +163,7 @@ def get_author_details(author_key: str) -> Optional[Author]:
 
 
 
-def find_similar_authors(target_author: str, limit: int = 5) -> List[Dict]:
+def find_similar_authors(target_author: str, limit: AUTHOR_LIMIT_DEFAULT) -> List[Dict]:
     """
     Find authors similar to target by combining AND-queries on subject pairs
     and ranking by frequency of occurrence.
@@ -251,28 +240,31 @@ def find_similar_authors(target_author: str, limit: int = 5) -> List[Dict]:
 def find_similar_books(
     target_book: str,
     limit: int = 10,
+    offset: int = 0,
     max_subjects: int = 10
 ) -> List[Dict]:
-    """
-    Find similar books: ~70% share ≥70% of target subjects,
-    ~30% share at least one subject, excluding any whose title
-    contains the original query string.
-    """
     try:
-        # 1. Lookup the target book and its subjects
-        resp = diploma_session.get(
-            OL_SEARCH_URL,
-            params={'q': target_book, 'limit': 1, 'fields': 'key,title,subject'},
-            timeout=10
-        )
-        if not resp.ok:
-            logger.error(f"Lookup error for '{target_book}': {resp.status_code}")
-            return []
-        docs = resp.json().get('docs', [])
-        if not docs:
-            return []
+        if offset == 0:
+            resp = diploma_session.get(
+                OL_SEARCH_URL,
+                params={'q': target_book, 'limit': 1, 'fields': 'key,title,subject'},
+                timeout=10
+            )
+            if not resp.ok:
+                logger.error(f"Lookup error for '{target_book}': {resp.status_code}")
+                return []
+            docs = resp.json().get('docs', [])
+            if not docs:
+                return []
 
-        target = docs[0]
+            target = docs[0]
+            find_similar_books._target_cache = target
+        else:
+            target = getattr(find_similar_books, "_target_cache", None)
+            if target is None:
+                logger.error("Offset > 0 but target book metadata not cached.")
+                return []
+
         target_key = target.get('key')
         user_query = target_book.lower().strip()
 
@@ -280,18 +272,17 @@ def find_similar_books(
         if not raw_subjects:
             return []
 
-        # 2. Limit subjects to avoid overly long URLs
         top_subjects = raw_subjects[:max_subjects]
         target_set = {s.lower() for s in top_subjects}
 
-        # 3. Single OR‐query for broad candidate pool
         or_clause = " OR ".join(f'subject:"{s}"' for s in top_subjects)
         pool_resp = diploma_session.get(
             OL_SEARCH_URL,
             params={
                 'q': or_clause,
                 'limit': limit * 10,
-                'fields': 'key,title,author_name,subject, cover_i,ratings_count,ratings_average'
+                'offset': offset,
+                'fields': 'key,title,author_name,subject,cover_i,ratings_count,ratings_average'
             },
             timeout=15
         )
@@ -300,20 +291,12 @@ def find_similar_books(
             return []
         pool = pool_resp.json().get('docs', [])
 
-        # 4. Compute overlap and filter out same‐titled books
         candidates = []
         seen = set()
         for doc in pool:
             key = doc.get('key')
             title = (doc.get('title') or "").lower()
-
-            # exclude the exact same record or any title containing the original query
-            if (
-                not key
-                or key == target_key
-                or key in seen
-                or (user_query and user_query in title)
-            ):
+            if not key or key == target_key or key in seen or (user_query and user_query in title):
                 continue
             seen.add(key)
 
@@ -321,30 +304,7 @@ def find_similar_books(
             ratio = len(target_set & cand_subjects) / len(target_set) if target_set else 0.0
             candidates.append({**doc, 'ratio': ratio})
 
-        # 5. Split into strict (≥70%) and exploratory (<70%)
-        strict = [c for c in candidates if c['ratio'] >= 0.7]
-        explore = [c for c in candidates if 0 < c['ratio'] < 0.7]
-
-        # 6. Determine counts for each group
-        strict_n = math.ceil(limit * 0.7)
-        explore_n = limit - strict_n
-
-        strict.sort(key=lambda x: x['ratio'], reverse=True)
-        explore.sort(key=lambda x: x['ratio'], reverse=True)
-
-        # 7. Pick top from each, topping up if necessary
-        selected = strict[:strict_n]
-        if len(selected) < strict_n:
-            # not enough strict → take more from explore
-            explore_n += (strict_n - len(selected))
-        selected += explore[:explore_n]
-
-        # 8. If still short, draw extras from remaining candidates
-        if len(selected) < limit:
-            extras = strict[strict_n:] + explore[explore_n:]
-            selected += extras[: limit - len(selected)]
-
-        return selected[:limit]
+        return candidates
 
     except Exception as e:
         logger.error(f"Error finding similar books for '{target_book}': {e}", exc_info=True)
