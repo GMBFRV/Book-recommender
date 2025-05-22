@@ -5,55 +5,51 @@
 document.addEventListener("DOMContentLoaded", () => {
   const genreButtons = document.querySelectorAll(".genre-btn");
   const continueBtn = document.getElementById("continueBtn");
+  const loadMoreBtn = document.getElementById("loadMoreBtn");
   const out = document.getElementById("results");
-    let selectedGenres = new Set();
-    let offset = 0;
-    const limit = 20;
 
-  // Function to create a standardized book card element
+  let selectedGenres = new Set();
+  let offset = 0;
+  const limit = 20;
+
+  // Create a standardized book card DOM element
   function createBookCard(book) {
     const card = document.createElement("div");
     card.className = "book-card";
 
-    // Create the link wrapper
     const link = document.createElement("a");
-    link.href = `/book/${book.key.replace("/works/","")}`;
+    link.href = `/book/${book.key.replace("/works/", "")}`;
     link.className = "book-link";
 
-    // Book cover
     if (book.cover_id) {
       const img = document.createElement("img");
       img.src = `https://covers.openlibrary.org/b/id/${book.cover_id}-M.jpg`;
       img.alt = `Cover for ${book.title}`;
       img.className = "book-cover";
       img.loading = "lazy";
+
       const wrapper = document.createElement("div");
       wrapper.className = "cover-wrapper";
       wrapper.appendChild(img);
       link.appendChild(wrapper);
-
     } else {
       const placeholder = document.createElement("div");
       placeholder.className = "book-cover placeholder";
       link.appendChild(placeholder);
     }
 
-    // Book information container
     const info = document.createElement("div");
     info.className = "book-info";
 
-    // Title
     const h3 = document.createElement("h3");
     h3.textContent = book.title || "No title available";
     info.appendChild(h3);
 
-    // Authors
     const pAuthor = document.createElement("p");
     pAuthor.textContent = (book.authors || []).join(", ") || "Unknown author";
     pAuthor.className = "book-authors";
     info.appendChild(pAuthor);
 
-    // Rating (if available)
     if (book.rating) {
       const pRating = document.createElement("p");
       pRating.textContent = `★ ${book.rating.toFixed(1)}`;
@@ -67,7 +63,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return card;
   }
 
-  // Handle genre button selection
+  // Handle genre button selection/deselection
   genreButtons.forEach(btn => {
     btn.addEventListener("click", () => {
       const genre = btn.dataset.genre;
@@ -82,20 +78,23 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Handle "Find Books" button click
-   continueBtn.addEventListener("click", () => {
-    offset = 0;                  // при новом поиске начинаем сначала
-    out.innerHTML = "";          // чистим результаты
-    loadMoreBtn.hidden = true;   // прячем Load More, пока нет ответа
+  // Handle "Find Books" click — reset state and load first page
+  continueBtn.addEventListener("click", () => {
+    offset = 0;
+    out.innerHTML = "";
+    loadMoreBtn.style.display = "none";
     fetchBooks();
   });
 
-  // Вешаем на “Load More”
+  // Handle "Load More" click — fetch next page
   loadMoreBtn.addEventListener("click", () => {
-    fetchBooks();
+    loadMoreBtn.disabled = true;
+    fetchBooks().then(() => {
+      loadMoreBtn.disabled = false;
+    });
   });
 
-  // Универсальная функция запроса
+  // Fetch books from the API using current genre selections and offset
   async function fetchBooks() {
     const genresArray = Array.from(selectedGenres);
     const params = new URLSearchParams();
@@ -103,7 +102,7 @@ document.addEventListener("DOMContentLoaded", () => {
     params.append("offset", offset);
     params.append("limit", limit);
 
-    // Показываем индикатор (для первого запроса)
+    // Show loading animation for initial search
     if (offset === 0) {
       out.innerHTML = `
         <div class="loading-container">
@@ -119,39 +118,39 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!resp.ok) throw new Error(`Error ${resp.status}`);
       const books = await resp.json();
 
-      // Если первый запрос и нет результатов
       if (offset === 0 && books.length === 0) {
         out.innerHTML = '<div class="empty-message">No books found matching your selected genres.</div>';
         return;
       }
 
-      // Убираем индикатор (после первого запроса)
-      if (offset === 0) out.innerHTML = "";
+      if (offset === 0) {
+        out.innerHTML = "";
+      }
 
-      // Добавляем карточки
       books.forEach(book => {
         out.appendChild(createBookCard(book));
       });
 
-      offset += books.length;   // сдвигаем offset на число реально полученных
+      offset += books.length;
 
-      // Если получили меньше pageSize — дальше нечего грузить
-      if (books.length < limit) {
-        loadMoreBtn.hidden = true;
-      } else {
-        loadMoreBtn.hidden = false;
-      }
+      // Show or hide Load More button depending on result size
+      loadMoreBtn.style.display = books.length < limit ? "none" : "block";
+
     } catch (err) {
       if (offset === 0) {
         out.innerHTML = `<div class="error-message">Error: ${err.message}</div>`;
       } else {
-        // при загрузке следующей порции можно просто отключить кнопку
-        loadMoreBtn.hidden = true;
+        loadMoreBtn.style.display = "none";
         console.error(err);
       }
     }
   }
+
+  // Hide Load More button on initial page load
+  loadMoreBtn.style.display = "none";
 });
+
+
 
 
 /*
@@ -232,101 +231,159 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 });
 
+
 /*
 ---------------------------------------- Book-based -----------------------------------------------------------------
  */
+
 document.addEventListener("DOMContentLoaded", () => {
-  const bookInput = document.getElementById("bookTitleInput");
-  const searchBtn = document.getElementById("searchBtn");
+  const bookInput        = document.getElementById("bookTitleInput");
+  const searchBtn        = document.getElementById("searchBtn");
+  const loadMoreBtn      = document.getElementById("loadMoreBtn");
   const resultsContainer = document.getElementById("results");
 
-  async function performSearch() {
+  if (!bookInput || !searchBtn) return;
+
+  let offset       = 0;
+  const pageSize   = 20;
+  let currentQuery = "";
+
+  loadMoreBtn.style.display  = "none";
+  loadMoreBtn.disabled       = true;
+
+  async function fetchBooks(reset = false) {
     const title = bookInput.value.trim();
-    if (!title) {
-      resultsContainer.innerHTML = '<div class="error-message">Please enter a book title</div>';
-      return;
+    if (!title) return;
+
+    if (reset) {
+      offset = 0;
+      currentQuery = title;
+      resultsContainer.innerHTML = "";
+      loadMoreBtn.style.display = "none";
+      loadMoreBtn.disabled      = true;
+    } else {
+      loadMoreBtn.disabled      = true;
+      loadMoreBtn.classList.add("loading");
     }
 
-    resultsContainer.innerHTML = `
+    if (reset) {
+      resultsContainer.innerHTML = `
         <div class="loading-container">
-            <div class="loading">
+          <div class="loading">
             <div class="loading-spinner"></div>
-            <div class="loading-message">Searching for books...</div>
-            </div>
-        </div>
-    `;
-
+            <div class="loading-message">Searching for books…</div>
+          </div>
+        </div>`;
+    }
 
     try {
-      const response = await fetch(`/api/book?book=${encodeURIComponent(title)}`);
-      if (!response.ok) throw new Error(`Error ${response.status}`);
+      const url      = `/api/book?book=${encodeURIComponent(currentQuery)}&offset=${offset}&limit=${pageSize}`;
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
       const books = await response.json();
-      if (!books.length) {
-        resultsContainer.innerHTML = `<div class="empty-message">No similar books found for "${title}"</div>`;
+
+      if (reset && books.length === 0) {
+        resultsContainer.innerHTML = `
+          <div class="empty-message">
+            No similar books found for “${currentQuery}”
+          </div>`;
         return;
       }
-      resultsContainer.innerHTML = "";
 
-books.forEach(book => {
-    const card = document.createElement("div");
-    card.className = "book-card";
+      if (reset) {
+        resultsContainer.innerHTML = "";
+      }
 
-    // Create link wrapper
-    const link = document.createElement("a");
-    link.href = `/book/${book.key.replace("/works/","")}`;
-    link.className = "book-link";
+      // —— UPDATED BOOK CARDS CREATION —————————————————————————
+      books.forEach(book => {
+        const card = document.createElement("div");
+        card.className = "book-card";
 
-    // Book cover
-    if (book.cover_id) {
-      const img = document.createElement("img");
-      img.src = `https://covers.openlibrary.org/b/id/${book.cover_id}-M.jpg`;
-      img.alt = `Cover for ${book.title}`;
-      img.className = "book-cover";
-      img.loading = "lazy";
-      const wrapper = document.createElement("div");
-      wrapper.className = "cover-wrapper";
-      wrapper.appendChild(img);
-      link.appendChild(wrapper);
-    } else {
-        const placeholder = document.createElement("div");
-        placeholder.className = "book-cover placeholder";
-        link.appendChild(placeholder);
-    }
+        // link wrapper
+        const link = document.createElement("a");
+        link.href      = `/book/${book.key.replace("/works/","")}`;
+        link.className = "book-link";
 
-    // Book info
-    const info = document.createElement("div");
-    info.className = "book-info";
+        // Book cover (wrapped in .cover-wrapper)
+        if (book.cover_id) {
+          const wrapper = document.createElement("div");
+          wrapper.className = "cover-wrapper";
 
-    // Title
-    const h3 = document.createElement("h3");
-    h3.textContent = book.title || "No title available";
-    info.appendChild(h3);
+          const img = document.createElement("img");
+          img.src       = `https://covers.openlibrary.org/b/id/${book.cover_id}-M.jpg`;
+          img.alt       = `Cover for ${book.title}`;
+          img.className = "book-cover";
+          img.loading   = "lazy";
 
-    // Authors
-    const pAuthor = document.createElement("p");
-    pAuthor.textContent = book.authors?.join(", ") || "Unknown author";
-    pAuthor.className = "book-authors";
-    info.appendChild(pAuthor);
+          wrapper.appendChild(img);
+          link.appendChild(wrapper);
+        } else {
+          const placeholder = document.createElement("div");
+          placeholder.className = "book-cover placeholder";
+          link.appendChild(placeholder);
+        }
 
-    // Rating
-    if (book.rating) {
-        const pRating = document.createElement("p");
-        pRating.textContent = `★ ${book.rating.toFixed(1)}`;
-        pRating.className = "book-rating";
-        info.appendChild(pRating);
-    }
+        // Book info
+        const info = document.createElement("div");
+        info.className = "book-info";
 
-    link.appendChild(info);
-    card.appendChild(link);
-    resultsContainer.appendChild(card);
-});
+        // Title
+        const h3 = document.createElement("h3");
+        h3.textContent = book.title || "No title available";
+        info.appendChild(h3);
+
+        // Authors
+        const pAuthor = document.createElement("p");
+        pAuthor.className = "book-authors";
+        pAuthor.textContent = (book.authors?.join(", ") || "Unknown author");
+        info.appendChild(pAuthor);
+
+        // Rating
+        if (book.rating != null) {
+          const pRating = document.createElement("p");
+          pRating.className = "book-rating";
+          pRating.textContent = `★ ${book.rating.toFixed(1)}`;
+          info.appendChild(pRating);
+        }
+
+        link.appendChild(info);
+        card.appendChild(link);
+        resultsContainer.appendChild(card);
+      });
+      // ——————————————————————————————————————————————————————————————
+
+      if (books.length === pageSize) {
+        loadMoreBtn.style.display = "block";
+      } else {
+        loadMoreBtn.style.display = "none";
+        const endMsg = document.createElement("div");
+        endMsg.className = "end-message";
+        endMsg.textContent = "No more books found.";
+        resultsContainer.appendChild(endMsg);
+      }
+
+      offset += books.length;
+
     } catch (err) {
-      resultsContainer.innerHTML = `<div class="error-message">Error: ${err.message}</div>`;
+      resultsContainer.innerHTML = "";
+      const errDiv = document.createElement("div");
+      errDiv.className = "error-message";
+      errDiv.textContent = `Error: ${err.message}`;
+      resultsContainer.appendChild(errDiv);
+      loadMoreBtn.style.display = "none";
+
+    } finally {
+      loadMoreBtn.disabled = false;
+      loadMoreBtn.classList.remove("loading");
     }
   }
 
-  searchBtn.addEventListener("click", performSearch);
+  searchBtn.addEventListener("click", () => fetchBooks(true));
   bookInput.addEventListener("keydown", e => {
-    if (e.key === "Enter") performSearch();
+    if (e.key === "Enter") fetchBooks(true);
   });
+  loadMoreBtn.addEventListener("click", () => fetchBooks(false));
 });

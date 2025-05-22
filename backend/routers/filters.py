@@ -1,5 +1,5 @@
 import traceback
-from typing import List
+from typing import List, Dict
 from pathlib import Path
 from backend.api.open_library_api import get_author_details, logger, get_book_details, find_similar_books, \
     diploma_session, OL_AUTHOR_WORKS_URL, OL_AUTHORS_URL, OL_SEARCH_URL
@@ -215,6 +215,7 @@ async def get_author_works(
         logger.error(f"Error fetching works: {str(e)}", exc_info=True)
         raise HTTPException(500, "Failed to fetch author's works")
 
+
 #
 #                                   Routers for book filter
 #
@@ -223,34 +224,42 @@ async def get_author_works(
 def book_filter():
     return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "book_based.html")
 
+_recs_cache: Dict[str, List[Dict]] = {}
+MAX_REC = 200
 
 @router.get("/api/book", response_model=List[Book])
 async def get_similar_books(
-    book: str = Query(..., min_length=2, description="Title of the book to find similar ones"),
-    limit: int = Query(20, ge=1, le=20, description="Maximum number of recommendations to return")
+    book: str = Query(..., min_length=2),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50),
 ) -> List[Book]:
-    """
-    Return a list of books similar to the given title using TF-IDF similarity.
-    """
-    recommendations = recommend_similar_books(book, limit=limit)
-    if not recommendations:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No recommendations found for title '{book}'"
-        )
+    # clear cache on brand-new search
+    if offset == 0:
+        _recs_cache.pop(book, None)
 
+    # fetch/calc full recommendation list once
+    if book not in _recs_cache:
+        _recs_cache[book] = recommend_similar_books(book, limit=MAX_REC)
+
+    full = _recs_cache[book]
+    page = full[offset : offset + limit]
+
+    # always return a 200 + list (possibly empty)
     return [
         Book(
-            key=rec['key'],
-            title=rec['title'],
-            authors=rec.get('author_name', []),
-            genres=rec.get('subject', []),
-            cover_id=rec.get('cover_i'),
-            rating=rec.get('ratings_average'),
-            rating_count=rec.get('ratings_count'),
+            key=rec["key"],
+            title=rec["title"],
+            authors=rec.get("author_name", []),
+            genres=rec.get("subject", []),
+            cover_id=rec.get("cover_i"),
+            rating=rec.get("ratings_average"),
+            rating_count=rec.get("ratings_count"),
         )
-        for rec in recommendations
+        for rec in page
     ]
+
+
+
 
 
 @router.get("/api/book_suggest")

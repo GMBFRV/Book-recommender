@@ -120,6 +120,7 @@ def recommend_similar_authors(target_author: str, limit: AUTHOR_LIMIT_DEFAULT) -
     return sorted(results, key=lambda x: x.similarity_score, reverse=True)[:limit]
 
 
+
 # ----------------------------------------------------------------------------------------------------------------------
 #                                               Book-based
 # ----------------------------------------------------------------------------------------------------------------------

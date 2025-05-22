@@ -345,3 +345,33 @@
 .suggestion-text {
   flex: 1;
 }
+
+
+/* -------------------------------------------------------------------------------------------------------------
+ Load More Button
+--------------------------------------------------------------------------------------------------------------*/
+
+.load-more-btn {
+  display: block;
+  margin: 2rem auto;
+  padding: 1rem 2rem;
+  width: 100%;
+  max-width: 400px;
+  font-size: 1.2rem;
+  font-weight: bold;
+  background-color: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.load-more-btn:hover {
+  background-color: #357ac9;
+}
+
+.load-more-btn:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}

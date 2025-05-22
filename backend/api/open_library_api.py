@@ -243,8 +243,14 @@ def find_similar_books(
     offset: int = 0,
     max_subjects: int = 10
 ) -> List[Dict]:
+    """
+    Find similar books: ~70% share ≥70% of target subjects,
+    ~30% share at least one subject, excluding any whose title
+    contains the original query string.
+    """
     try:
         if offset == 0:
+            # При offset=0 извлекаем саму целевую книгу
             resp = diploma_session.get(
                 OL_SEARCH_URL,
                 params={'q': target_book, 'limit': 1, 'fields': 'key,title,subject'},
@@ -275,6 +281,7 @@ def find_similar_books(
         top_subjects = raw_subjects[:max_subjects]
         target_set = {s.lower() for s in top_subjects}
 
+        # Построение OR-запроса
         or_clause = " OR ".join(f'subject:"{s}"' for s in top_subjects)
         pool_resp = diploma_session.get(
             OL_SEARCH_URL,
@@ -296,6 +303,7 @@ def find_similar_books(
         for doc in pool:
             key = doc.get('key')
             title = (doc.get('title') or "").lower()
+
             if not key or key == target_key or key in seen or (user_query and user_query in title):
                 continue
             seen.add(key)
@@ -304,7 +312,25 @@ def find_similar_books(
             ratio = len(target_set & cand_subjects) / len(target_set) if target_set else 0.0
             candidates.append({**doc, 'ratio': ratio})
 
-        return candidates
+        strict = [c for c in candidates if c['ratio'] >= 0.7]
+        explore = [c for c in candidates if 0 < c['ratio'] < 0.7]
+
+        strict_n = math.ceil(limit * 0.7)
+        explore_n = limit - strict_n
+
+        strict.sort(key=lambda x: x['ratio'], reverse=True)
+        explore.sort(key=lambda x: x['ratio'], reverse=True)
+
+        selected = strict[:strict_n]
+        if len(selected) < strict_n:
+            explore_n += (strict_n - len(selected))
+        selected += explore[:explore_n]
+
+        if len(selected) < limit:
+            extras = strict[strict_n:] + explore[explore_n:]
+            selected += extras[: limit - len(selected)]
+
+        return selected[:limit]
 
     except Exception as e:
         logger.error(f"Error finding similar books for '{target_book}': {e}", exc_info=True)
