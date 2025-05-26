@@ -1,9 +1,8 @@
-import traceback
 from typing import List, Dict
 from pathlib import Path
 from backend.api.open_library_api import get_author_details, logger, get_book_details, find_similar_books, \
     diploma_session, OL_AUTHOR_WORKS_URL, OL_AUTHORS_URL, OL_SEARCH_URL
-from backend.models import Book, Author, BookDetailSchema
+from backend.models import Book, Author
 from fastapi import APIRouter, HTTPException, Query
 from starlette.responses import FileResponse
 from langdetect import detect, LangDetectException
@@ -18,30 +17,23 @@ from backend.config import (
     BOOKS_PAGE_LIMIT_DEFAULT,
     BOOKS_OFFSET_DEFAULT,
     AUTHOR_LIMIT_DEFAULT,
-    BOOK_PAGE_LIMIT_DEFAULT
 )
 from pydantic import BaseModel
 
 router = APIRouter(tags=["filters"])
 
-# Absolute path to project root (3 levels up: /project/backend/routers → /project)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-#
-#                                   Routers for genre filter
-#
+_recs_cache: Dict[str, List[Dict]] = {}
+MAX_REC = 200
+
+#-----------------------------------------------------------------------------------------------------------------------
+#                                   Routers for genre-based filter
+#-----------------------------------------------------------------------------------------------------------------------
 
 @router.get("/genre_filter")
 def get_genre_filter():
     return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "genre_based.html")
-
-
-from typing import List
-from fastapi import APIRouter, Query, HTTPException
-import logging
-
-from backend.api.open_library_api import search_books_ol
-from backend.models import Book  # ваш Pydantic-модель Book
 
 
 @router.get("/api/genre_filter", response_model=List[Book])
@@ -69,28 +61,29 @@ async def genre_filter_api(
     )
 
 
+#-----------------------------------------------------------------------------------------------------------------------
+#                                   Routers for book details
+#-----------------------------------------------------------------------------------------------------------------------
+
 @router.get("/book/{work_key}")
 def book_detail_page(work_key: str):
-    # serve the HTML template
     return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "book_details.html")
-
 
 
 class BookDetailResponse(BaseModel):
     detail: dict
     recommendations: List[Book]
 
+
 @router.get("/api/book/{work_key}", response_model=BookDetailResponse)
 async def book_detail_api(
         work_key: str,
         limit: int = Query(5, ge=1, le=20),
 ):
-    # 1) full metadata
     meta = get_book_details(work_key)
     if not meta:
         raise HTTPException(404, f"No work found for key {work_key}")
 
-    # 2) recommendations by TITLE (use your existing function)
     raw = find_similar_books(meta["title"], limit=limit)
 
     recs = [
@@ -108,9 +101,9 @@ async def book_detail_api(
 
     return BookDetailResponse(detail=meta, recommendations=recs)
 
-#
-#                                   Routers for author filter
-#
+#-----------------------------------------------------------------------------------------------------------------------
+#                                   Routers for author-based filter
+#-----------------------------------------------------------------------------------------------------------------------
 
 
 @router.get("/author_filter")
@@ -123,46 +116,8 @@ async def get_author_recommendations(
     author: str = Query(..., min_length=2),
     limit: int = Query(AUTHOR_LIMIT_DEFAULT, ge=1, le=20)
 ):
-    """Return similar authors, even with score 0."""
     authors = recommend_similar_authors(author, limit=limit)
     return authors[:limit]
-
-
-@router.get("/api/author_suggest")
-async def author_suggestions(
-        query: str = Query(..., min_length=2),
-        limit: int = Query(5, ge=1, le=10)
-):
-    """Return author name suggestions based on partial match."""
-    try:
-        params = {
-            'q': query,
-            'limit': limit,
-            'fields': 'name,key'
-        }
-        resp = diploma_session.get(OL_AUTHORS_URL, params=params, timeout=5)
-        resp.raise_for_status()
-        docs = resp.json().get('docs', [])
-
-        return [{'name': doc['name']} for doc in docs if 'name' in doc]
-    except Exception as e:
-        logger.error(f'Error fetching author suggestions: {e}')
-        return []
-
-@router.get("/author/{author_key}")
-def author_detail_page(author_key: str):
-    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "author_details.html")
-
-
-@router.get("/api/author/{author_key}", response_model=Author)
-async def get_author_details_api(author_key: str):
-    author = get_author_details(author_key)
-    if not author:
-        raise HTTPException(404, f"No author found for key {author_key}")
-    return author
-
-
-from langdetect import detect, LangDetectException
 
 
 @router.get("/api/author/{author_key}/works", response_model=List[Book])
@@ -216,16 +171,30 @@ async def get_author_works(
         raise HTTPException(500, "Failed to fetch author's works")
 
 
-#
-#                                   Routers for book filter
-#
+#-----------------------------------------------------------------------------------------------------------------------
+#                                   Routers for author details
+#-----------------------------------------------------------------------------------------------------------------------
+@router.get("/author/{author_key}")
+def author_detail_page(author_key: str):
+    return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "author_details.html")
+
+
+@router.get("/api/author/{author_key}", response_model=Author)
+async def get_author_details_api(author_key: str):
+    author = get_author_details(author_key)
+    if not author:
+        raise HTTPException(404, f"No author found for key {author_key}")
+    return author
+
+
+#-----------------------------------------------------------------------------------------------------------------------
+#                                   Routers for book-based filter
+#-----------------------------------------------------------------------------------------------------------------------
 
 @router.get("/book_filter")
 def book_filter():
     return FileResponse(PROJECT_ROOT / "frontend" / "templates" / "book_based.html")
 
-_recs_cache: Dict[str, List[Dict]] = {}
-MAX_REC = 200
 
 @router.get("/api/book", response_model=List[Book])
 async def get_similar_books(
@@ -233,18 +202,16 @@ async def get_similar_books(
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=50),
 ) -> List[Book]:
-    # clear cache on brand-new search
+
     if offset == 0:
         _recs_cache.pop(book, None)
 
-    # fetch/calc full recommendation list once
     if book not in _recs_cache:
         _recs_cache[book] = recommend_similar_books(book, limit=MAX_REC)
 
     full = _recs_cache[book]
     page = full[offset : offset + limit]
 
-    # always return a 200 + list (possibly empty)
     return [
         Book(
             key=rec["key"],
@@ -259,15 +226,14 @@ async def get_similar_books(
     ]
 
 
-
-
-
+#-----------------------------------------------------------------------------------------------------------------------
+#                                   Router for search autocomplete
+#-----------------------------------------------------------------------------------------------------------------------
 @router.get("/api/book_suggest")
 async def book_suggestions(
         query: str = Query(..., min_length=2),
         limit: int = Query(5, ge=1, le=10)
 ):
-    """Return book title suggestions based on partial match."""
     try:
         params = {
             'q': query,
@@ -285,4 +251,25 @@ async def book_suggestions(
         } for doc in docs if doc.get('title')]
     except Exception as e:
         logger.error(f'Error fetching book suggestions: {e}')
+        return []
+
+
+@router.get("/api/author_suggest")
+async def author_suggestions(
+        query: str = Query(..., min_length=2),
+        limit: int = Query(5, ge=1, le=10)
+):
+    try:
+        params = {
+            'q': query,
+            'limit': limit,
+            'fields': 'name,key'
+        }
+        resp = diploma_session.get(OL_AUTHORS_URL, params=params, timeout=5)
+        resp.raise_for_status()
+        docs = resp.json().get('docs', [])
+
+        return [{'name': doc['name']} for doc in docs if 'name' in doc]
+    except Exception as e:
+        logger.error(f'Error fetching author suggestions: {e}')
         return []

@@ -30,18 +30,30 @@ OL_AUTHOR_DETAILS_URL = 'https://openlibrary.org/authors/{author_key}.json'
 OL_SUBJECT_URL = 'https://openlibrary.org/subjects/{subject}.json'
 
 
+# ----------------------------------------------------------------------------------------------------------------------
+#                                               General
+# ----------------------------------------------------------------------------------------------------------------------
+
 def get_book_details(work_key: str) -> Dict:
     """
-    Fetch full work info from OpenLibrary and normalize it,
-    but always take the description from Wikipedia.
+    Retrieve detailed information about a book using its work key.
+
+    This function fetches metadata for a book from the OpenLibrary API, including title,
+    subjects, authors, and cover images. Additionally, it queries the Wikipedia REST API
+    to extract a short description of the book based on its title.
+
+    Args:
+        work_key (str): The unique work identifier of the book (e.g., 'OL12345W').
+
+    Returns:
+        Dict: A dictionary containing book metadata including 'key', 'title', 'description',
+              'subjects', 'authors', and 'covers'.
     """
-    # work_key should be like "OL12345W" (no "/works/" prefix)
     url  = f"https://openlibrary.org/works/{work_key}.json"
     resp = diploma_session.get(url, timeout=10)
     resp.raise_for_status()
     data = resp.json()
 
-    # Build authors list by fetching their details
     authors = []
     for a in data.get("authors", []):
         auth_key = a.get("author", {}).get("key", "").split("/")[-1]
@@ -49,20 +61,45 @@ def get_book_details(work_key: str) -> Dict:
         if det:
             authors.append(det.name)
 
-    # Fetch description from Wikipedia instead of OpenLibrary
     raw_wiki    = fetch_wikipedia_summary(data.get("title", ""))
     description = raw_wiki.strip() if raw_wiki else None
 
     return {
         "key":         work_key,
         "title":       data.get("title"),
-        "description": description,      # ← from Wikipedia only
+        "description": description,
         "subjects":    data.get("subjects", []),
         "authors":     authors,
-        "covers":      data.get("covers", []),  # list of cover_ids
+        "covers":      data.get("covers", []),
     }
 
 
+def fetch_wikipedia_summary(name: str) -> Optional[str]:
+    """
+    Fetch a short summary description of a book or author from the Wikipedia REST API.
+
+    This function takes a name (title or author), formats it for a Wikipedia URL,
+    and retrieves the corresponding summary text from Wikipedia's REST API.
+
+    Args:
+        name (str): The title of the book or name of the author to search for.
+
+    Returns:
+        Optional[str]: A short summary text extracted from Wikipedia, or None if the request fails.
+    """
+    title = name.replace(' ', '_')
+    url   = f'https://en.wikipedia.org/api/rest_v1/page/summary/{title}'
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        return r.json().get('extract')
+    except Exception:
+        return None
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+#                                               Genre-based
+# ----------------------------------------------------------------------------------------------------------------------
 
 def search_books_ol(
     genres: Union[str, List[str]],
@@ -70,6 +107,22 @@ def search_books_ol(
     limit: int = BOOKS_PAGE_LIMIT_DEFAULT,
     offset: int = BOOKS_OFFSET_DEFAULT,
 ) -> List[Dict]:
+    """
+    Search for books in the OpenLibrary API by genre and minimum number of reviews.
+
+    This function constructs a subject-based query using one or more genre keywords
+    and fetches a list of books that have at least the specified number of user ratings.
+    Results are filtered and paginated using the given parameters.
+
+    Args:
+        genres (Union[str, List[str]]): One or more genre keywords to include in the subject query.
+        min_reviews (int): Minimum number of user reviews required to include a book.
+        limit (int): Maximum number of results to return per request.
+        offset (int): Pagination offset for the search results.
+
+    Returns:
+        List[Dict]: A list of raw book data dictionaries returned by the OpenLibrary API.
+    """
     if isinstance(genres, str):
         genre_list = [genres]
     else:
@@ -98,16 +151,30 @@ def search_books_ol(
         return []
 
 
+# ----------------------------------------------------------------------------------------------------------------------
+#                                               Author-based
+# ----------------------------------------------------------------------------------------------------------------------
 
 @lru_cache(maxsize=128)
 def get_subjects_from_works(author_key: str) -> List[str]:
-    """Fetch top subjects from an author's works, caching results."""
+    """
+    Fetch the most frequent subjects from an author's most popular works using the OpenLibrary API.
+
+    This function retrieves up to 50 works by the specified author, sorts them by edition count
+    to estimate popularity, and analyzes the top 20 works to extract their subjects.
+    It returns the 5 most common subjects across those works. Results are cached for efficiency.
+
+    Args:
+        author_key (str): The unique key of the author (e.g., 'OL123A').
+
+    Returns:
+        List[str]: A list of the top 5 most frequent subject keywords from the author's works.
+    """
     try:
         url = OL_AUTHOR_WORKS_URL.format(author_key=author_key)
         params = {'limit': 50, 'fields': 'subjects,edition_count'}
         data = diploma_session.get(url, params=params, timeout=10).json()
         entries = data.get('entries', [])
-        # sort by popularity
         entries.sort(key=lambda x: x.get('edition_count', 0), reverse=True)
         subjects = [s.lower()
                     for work in entries[:20]
@@ -119,21 +186,21 @@ def get_subjects_from_works(author_key: str) -> List[str]:
         return []
 
 
-def fetch_wikipedia_summary(name: str) -> Optional[str]:
-    """
-    Fetch the plain-text summary from Wikipedia REST API.
-    """
-    title = name.replace(' ', '_')
-    url   = f'https://en.wikipedia.org/api/rest_v1/page/summary/{title}'
-    try:
-        r = requests.get(url, timeout=10)
-        r.raise_for_status()
-        return r.json().get('extract')  # already plain text
-    except Exception:
-        return None
-
 @lru_cache(maxsize=128)
 def get_author_details(author_key: str) -> Optional[Author]:
+    """
+    Retrieve detailed metadata for an author using the OpenLibrary API and Wikipedia.
+
+    This function fetches author information such as name, birth/death dates, subjects,
+    biography (from Wikipedia), and other metadata using the author's unique key.
+    The result is cached for performance optimization.
+
+    Args:
+        author_key (str): The unique key or full URI of the author (e.g., 'OL123A' or '/authors/OL123A').
+
+    Returns:
+        Optional[Author]: An Author object with detailed information if successful; otherwise, None.
+    """
     try:
         key  = author_key.split('/')[-1]
         url  = OL_AUTHOR_DETAILS_URL.format(author_key=key)
@@ -165,11 +232,22 @@ def get_author_details(author_key: str) -> Optional[Author]:
 
 def find_similar_authors(target_author: str, limit: AUTHOR_LIMIT_DEFAULT) -> List[Dict]:
     """
-    Find authors similar to target by combining AND-queries on subject pairs
-    and ranking by frequency of occurrence.
+    Find authors similar to a target author based on shared subject combinations.
+
+    This function extracts the top subjects associated with the target author and generates
+    all possible subject pairs. For each combination, it performs an AND-query search via
+    the OpenLibrary API to retrieve authors whose works match those subjects. Authors are scored
+    by how frequently they appear across all combinations, and the top results are returned.
+
+    Args:
+        target_author (str): The name of the target author for whom similar authors are to be found.
+        limit (int): Maximum number of similar authors to return.
+
+    Returns:
+        List[Dict]: A list of author dictionaries containing 'name', 'key', and 'score',
+                    sorted by descending relevance.
     """
     try:
-        # 1. Fetch primary author
         params = {'q': target_author, 'limit': 1}
         search_data = diploma_session.get(OL_AUTHORS_URL, params=params, timeout=10).json()
         docs = search_data.get('docs', [])
@@ -178,7 +256,6 @@ def find_similar_authors(target_author: str, limit: AUTHOR_LIMIT_DEFAULT) -> Lis
         primary = docs[0]
         primary_key = primary.get('key', '').split('/')[-1]
 
-        # 2. Get author subjects
         target_subs = [s.lower() for s in primary.get('top_subjects', [])]
         if not target_subs:
             target_subs = get_subjects_from_works(primary_key)
@@ -186,13 +263,23 @@ def find_similar_authors(target_author: str, limit: AUTHOR_LIMIT_DEFAULT) -> Lis
             target_subs = ['science']
         logger.debug(f"Target subjects for {target_author}: {target_subs}")
 
-        # 3. Prepare subject combinations (pairs)
         combos = list(combinations(target_subs, 2))
         if not combos:
             combos = [(s,) for s in target_subs]
 
-        # 4. Define worker for a combo
         def fetch_combo_authors(combo):
+            """
+            Fetch authors whose works match a specific combination of subjects.
+
+            This function constructs an AND-based subject query and sends a request to the OpenLibrary API
+            to find authors who have written works that match all subjects in the given combination.
+
+            Args:
+                combo (Tuple[str, ...]): A tuple containing one or more subject keywords.
+
+            Returns:
+                List[Dict]: A list of raw author data dictionaries matching the subject combination.
+            """
             query = ' AND '.join(f'subject:"{s}"' for s in combo)
             url = OL_SEARCH_URL
             params = {
@@ -202,7 +289,6 @@ def find_similar_authors(target_author: str, limit: AUTHOR_LIMIT_DEFAULT) -> Lis
             }
             return diploma_session.get(url, params=params, timeout=10).json().get('docs', [])
 
-        # 5. Parallel fetch
         author_scores = Counter()
         author_names: Dict[str, str] = {}
         with ThreadPoolExecutor(max_workers=8) as executor:
@@ -223,7 +309,6 @@ def find_similar_authors(target_author: str, limit: AUTHOR_LIMIT_DEFAULT) -> Lis
                 except Exception as e:
                     logger.error(f"Error fetching combo result: {e}")
 
-        # 6. Build and return top authors
         results = []
         for key, score in author_scores.most_common(limit):
             results.append({'name': author_names.get(key), 'key': key, 'score': score})
@@ -234,8 +319,9 @@ def find_similar_authors(target_author: str, limit: AUTHOR_LIMIT_DEFAULT) -> Lis
         return []
 
 
-
-
+# ----------------------------------------------------------------------------------------------------------------------
+#                                               Book-based
+# ----------------------------------------------------------------------------------------------------------------------
 
 def find_similar_books(
     target_book: str,
@@ -244,13 +330,26 @@ def find_similar_books(
     max_subjects: int = 10
 ) -> List[Dict]:
     """
-    Find similar books: ~70% share ≥70% of target subjects,
-    ~30% share at least one subject, excluding any whose title
-    contains the original query string.
+    Find books similar to a given title based on shared subjects from OpenLibrary.
+
+    This function first retrieves the target book and extracts its top subjects.
+    It then searches for books that share those subjects using OR-based queries and ranks
+    them by subject overlap. About 70% of the returned results are required to share at least
+    70% of the target's subjects (strict match), and the remaining 30% may share fewer subjects
+    (exploratory match). Books with the same title or key as the original are excluded.
+
+    Args:
+        target_book (str): Title of the book to base the similarity search on.
+        limit (int): Maximum number of similar books to return.
+        offset (int): Offset for paginated API requests.
+        max_subjects (int): Maximum number of subjects to consider from the target book.
+
+    Returns:
+        List[Dict]: A list of dictionaries representing similar books,
+                    each including a 'ratio' field indicating subject overlap.
     """
     try:
         if offset == 0:
-            # При offset=0 извлекаем саму целевую книгу
             resp = diploma_session.get(
                 OL_SEARCH_URL,
                 params={'q': target_book, 'limit': 1, 'fields': 'key,title,subject'},
@@ -281,7 +380,6 @@ def find_similar_books(
         top_subjects = raw_subjects[:max_subjects]
         target_set = {s.lower() for s in top_subjects}
 
-        # Построение OR-запроса
         or_clause = " OR ".join(f'subject:"{s}"' for s in top_subjects)
         pool_resp = diploma_session.get(
             OL_SEARCH_URL,

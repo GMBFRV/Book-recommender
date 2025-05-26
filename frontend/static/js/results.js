@@ -1,8 +1,28 @@
-/*
----------------------------------------- Genre-based Filter (Updated) ----------------------------------------
-*/
+/* ---------------------------------------------------------------------------------------------------------------------
+---------------------------------------- Genre-based -------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------*/
 
 document.addEventListener("DOMContentLoaded", () => {
+  /**
+ * Enable genre-based book discovery with dynamic filtering and pagination.
+
+ * This script attaches interactive behavior to the genre selection interface
+ * and fetches books from the server based on selected genres.
+
+ * Functionality includes:
+ * 1. Tracks selected genres using button toggles.
+ * 2. Enables or disables the "Find Books" button depending on whether any genres are selected.
+ * 3. On "Find Books" click:
+ *    - Resets current state.
+ *    - Sends an API request with selected genres and fetches the first page of books.
+ *    - Displays results in a card-based layout with title, authors, cover, and rating.
+ * 4. On "Load More" click:
+ *    - Fetches the next set of results using an updated offset.
+ *    - Appends the new results without clearing previous ones.
+ * 5. Dynamically hides or shows the "Load More" button depending on whether more results are available.
+ * 6. Handles empty results and errors with user-friendly messages.
+ */
+
   const genreButtons = document.querySelectorAll(".genre-btn");
   const continueBtn = document.getElementById("continueBtn");
   const loadMoreBtn = document.getElementById("loadMoreBtn");
@@ -153,11 +173,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 
-/*
----------------------------------------- Author-based -----------------------------------------------------------------
- */
+/* ---------------------------------------------------------------------------------------------------------------------
+---------------------------------------- Author-based -------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------*/
 
 document.addEventListener("DOMContentLoaded", () => {
+  /**
+ * Enable interactive author search and display of similar authors based on user input.
+
+ * This script is triggered when the DOM is fully loaded and provides the following functionality:
+ * 1. Validates the author's name entered by the user in the input field.
+ * 2. On "Search" button click:
+ *    - Sends a request to `/api/author?author={authorName}` to fetch similar authors.
+ *    - Displays a loading animation while waiting for the response.
+ *    - If results are found:
+ *        • Renders a grid of author cards with photo, name, known work, and average rating.
+ *    - If no results are found:
+ *        • Displays a friendly message indicating no similar authors were found.
+ * 3. Handles invalid input (less than 2 characters) and server-side or network errors with clear feedback.
+ */
     const searchAuthorBtn = document.getElementById("searchAuthorBtn");
     const authorInput = document.getElementById("authorInput");
     const authorResults = document.getElementById("authorResults");
@@ -232,11 +266,20 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 
-/*
----------------------------------------- Book-based -----------------------------------------------------------------
- */
+/* ---------------------------------------------------------------------------------------------------------------------
+---------------------------------------- Book-based -------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------*/
 
 document.addEventListener("DOMContentLoaded", () => {
+  /**
+ * Enable dynamic book search and paginated loading of similar book recommendations.
+
+ * This script allows users to:
+ * - Search for books based on a title input.
+ * - Fetch the initial result set and render it as a grid of book cards.
+ * - Load additional pages using the "Load More" button.
+ * - Handle errors, loading states, and display fallback messages for empty results.
+ */
   const bookInput        = document.getElementById("bookTitleInput");
   const searchBtn        = document.getElementById("searchBtn");
   const loadMoreBtn      = document.getElementById("loadMoreBtn");
@@ -277,7 +320,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      const url      = `/api/book?book=${encodeURIComponent(currentQuery)}&offset=${offset}&limit=${pageSize}`;
+      const url = `/api/book?book=${encodeURIComponent(currentQuery)}&offset=${offset}&limit=${pageSize}`;
       const response = await fetch(url);
 
       if (!response.ok) {
@@ -297,17 +340,14 @@ document.addEventListener("DOMContentLoaded", () => {
         resultsContainer.innerHTML = "";
       }
 
-      // —— UPDATED BOOK CARDS CREATION —————————————————————————
       books.forEach(book => {
         const card = document.createElement("div");
         card.className = "book-card";
 
-        // link wrapper
         const link = document.createElement("a");
         link.href      = `/book/${book.key.replace("/works/","")}`;
         link.className = "book-link";
 
-        // Book cover (wrapped in .cover-wrapper)
         if (book.cover_id) {
           const wrapper = document.createElement("div");
           wrapper.className = "cover-wrapper";
@@ -326,22 +366,18 @@ document.addEventListener("DOMContentLoaded", () => {
           link.appendChild(placeholder);
         }
 
-        // Book info
         const info = document.createElement("div");
         info.className = "book-info";
 
-        // Title
         const h3 = document.createElement("h3");
         h3.textContent = book.title || "No title available";
         info.appendChild(h3);
 
-        // Authors
         const pAuthor = document.createElement("p");
         pAuthor.className = "book-authors";
         pAuthor.textContent = (book.authors?.join(", ") || "Unknown author");
         info.appendChild(pAuthor);
 
-        // Rating
         if (book.rating != null) {
           const pRating = document.createElement("p");
           pRating.className = "book-rating";
@@ -353,7 +389,6 @@ document.addEventListener("DOMContentLoaded", () => {
         card.appendChild(link);
         resultsContainer.appendChild(card);
       });
-      // ——————————————————————————————————————————————————————————————
 
       if (books.length === pageSize) {
         loadMoreBtn.style.display = "block";

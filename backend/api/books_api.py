@@ -2,11 +2,8 @@ import requests
 import os
 import time
 from typing import Optional
-
-# API configuration
 from backend.config import GOOGLE_BOOKS_URL, API_KEY
 
-# Ensure API configuration is provided at import time
 if not GOOGLE_BOOKS_URL or not API_KEY:
     raise RuntimeError("GOOGLE_BOOKS_URL or API_KEY is not set in config")
 

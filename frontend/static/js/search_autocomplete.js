@@ -1,4 +1,21 @@
-  // Get DOM elements (will be null if not on the respective page)
+/**
+ * Enable dynamic autocomplete suggestions for author and book inputs.
+
+ * This script adds live suggestion functionality to input fields for authors and books:
+ *
+ * Features:
+ * 1. Debounced API calls to avoid spamming the server while the user is typing.
+ * 2. When the user types at least 2 characters in the input:
+ *    - `/api/author_suggest?query=...` returns matching authors.
+ *    - `/api/book_suggest?query=...` returns matching books.
+ * 3. Suggestions are displayed below the respective input:
+ *    - For authors: simple text list with clickable names.
+ *    - For books: includes cover thumbnail, title, and author name.
+ * 4. Clicking on a suggestion autofill the input field and triggers a corresponding search button.
+ * 5. Suggestion lists are hidden:
+ *    - When the input is cleared or too short.
+ *    - When clicking outside the input/suggestions area.
+ */
   const authorInput = document.getElementById("authorInput");
   const authorSuggestions = document.getElementById("authorSuggestions");
   const bookInput = document.getElementById("bookTitleInput");
@@ -12,8 +29,10 @@
       timeoutId = setTimeout(() => func.apply(this, args), delay);
     };
   }
+  /* -------------------------------------------------------------------------------------------------------------------
+  // --------------------------------------------- Author suggestions --------------------------------------------------
+  --------------------------------------------------------------------------------------------------------------------*/
 
-  // ================= AUTHOR SUGGESTIONS =================
   if (authorInput && authorSuggestions) {
     // Fetch author suggestions
     async function fetchAuthorSuggestions(query) {
@@ -75,7 +94,9 @@
     });
   }
 
-  // ================= BOOK SUGGESTIONS =================
+  /* -------------------------------------------------------------------------------------------------------------------
+  // --------------------------------------------- Book suggestions ----------------------------------------------------
+  --------------------------------------------------------------------------------------------------------------------*/
   if (bookInput && bookSuggestions) {
     // Fetch book suggestions
     async function fetchBookSuggestions(query) {
@@ -144,7 +165,9 @@
     });
   }
 
-  // ================= COMMON CLICK-OUTSIDE HANDLER =================
+  /* -------------------------------------------------------------------------------------------------------------------
+  // ------------------------------------------ Outside click handler --------------------------------------------------
+  --------------------------------------------------------------------------------------------------------------------*/
   document.addEventListener('click', (e) => {
     // Hide author suggestions if clicking outside
     if (authorSuggestions && !authorInput.contains(e.target) && !authorSuggestions.contains(e.target)) {

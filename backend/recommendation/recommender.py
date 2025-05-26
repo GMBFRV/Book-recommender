@@ -33,8 +33,25 @@ def recommend_by_genre(
     offset: int = BOOKS_OFFSET_DEFAULT
 ) -> List[Book]:
     """
-    Recommends exactly `limit` books in specified genres with rating >= min_rating.
+    Recommend books based on genre filters, average rating, and number of reviews.
+
+    This function retrieves books from OpenLibrary matching the specified genres,
+    then filters them based on minimum rating and review count. It continues querying
+    in batches until the required number of books is collected or no more are found.
+    Results are sorted in descending order by rating.
+
+    Args:
+        genres (List[str]): List of genres (subjects) to filter by.
+        min_rating (float): Minimum average rating required for a book to be included.
+        min_reviews (int): Minimum number of reviews required.
+        limit (int): Maximum number of books to return.
+        offset (int): Starting point for pagination in the search results.
+
+    Returns:
+        List[Book]: A list of Book objects that match the filtering criteria,
+                    sorted by rating in descending order.
     """
+
     collected: List[Book] = []
     current_offset = offset
 
@@ -76,21 +93,55 @@ def recommend_by_genre(
 # ----------------------------------------------------------------------------------------------------------------------
 
 def calculate_similarity(target_subjects: Set[str], candidate_subjects: List[str]) -> float:
-    """Calculate meaningful similarity score (0-1)"""
+    """
+    Calculate the similarity score between two authors based on overlapping subjects.
+
+    This function compares the set of subjects from a target author with the subjects
+    of a candidate author and returns a normalized similarity score based on the proportion
+    of shared subjects. If the target author has no subjects, a default base score is returned.
+
+    Args:
+        target_subjects (Set[str]): A set of subject tags associated with the target author.
+        candidate_subjects (List[str]): A list of subject tags from the candidate author.
+
+    Returns:
+        float: A similarity score between 0.0 and 1.0 representing thematic overlap.
+               Returns 0.4 if the target has no subjects.
+    """
     if not target_subjects:
         return 0.4  # Default base score
 
     candidate_set = set(candidate_subjects)
     intersection = target_subjects & candidate_set
 
-    # Base score weighted by subject matches
     base_score = min(1.0, len(intersection) / len(target_subjects))
 
     return min(1.0, base_score)
 
 
 def recommend_similar_authors(target_author: str, limit: AUTHOR_LIMIT_DEFAULT) -> List[Author]:
-    """Get similar authors with parallel detail fetching"""
+    """
+    Recommend authors similar to the given target author based on subject overlap.
+
+    This function first retrieves a set of candidate authors that are thematically related
+    to the target author (via shared subject tags). It then calculates a similarity score
+    for each candidate using subject intersection and ranks them accordingly.
+    Only the top 'limit' most similar authors are returned.
+
+    Steps:
+    1. Fetch a set of initial candidates (2 * limit) using subject-based lookup.
+    2. Retrieve detailed information for the target author (including subjects).
+    3. In parallel, retrieve full data for all candidates.
+    4. For each candidate, compute a similarity score based on overlapping subjects.
+    5. Sort candidates by score and return the top N results.
+
+    Args:
+        target_author (str): Name of the author for whom similar authors are to be recommended.
+        limit (int): Number of similar authors to return.
+
+    Returns:
+        List[Author]: List of Author objects, each with an assigned similarity_score.
+    """
     start = time.perf_counter()
     logger.info(f"Starting recommendation for author: {target_author}")
 
@@ -129,6 +180,21 @@ def recommend_similar_books(
     target_book: str,
     limit: int = 10
 ) -> List[Dict]:
+    """
+    Recommend books similar to the given target title based on textual similarity.
+
+    This function finds a list of candidate books using subject overlap with the target book,
+    then calculates similarity scores using TF-IDF vectorization and cosine similarity
+    between the textual representations of books (title + subjects + author names).
+
+    Args:
+        target_book (str): The title of the book to find similar ones for.
+        limit (int): Number of similar books to return.
+
+    Returns:
+        List[Dict]: A list of books (as dictionaries) sorted by similarity score in descending order.
+                    Each result includes a 'score' field indicating the level of similarity (0.0–1.0).
+    """
     def doc_to_text(doc: Dict) -> str:
         parts = []
         if t := doc.get('title'):
@@ -146,17 +212,14 @@ def recommend_similar_books(
     seen_keys = set()
     target_doc = None
 
-    # Iteratively fetch similar books using offset until we reach the desired limit
     while len(all_candidates) < limit:
         batch = find_similar_books(target_book, limit=limit, offset=offset)
         if not batch:
             break
 
-        # On the first iteration, cache the reference (target) book
         if offset == 0 and batch:
             target_doc = getattr(find_similar_books, "_target_cache", None)
 
-        # Filter out duplicates
         for doc in batch:
             key = doc.get("key")
             if key and key not in seen_keys:
@@ -170,19 +233,15 @@ def recommend_similar_books(
     if not target_doc or not all_candidates:
         return []
 
-    # Build TF-IDF vectors for the target and candidate books
     texts = [doc_to_text(target_doc)] + [doc_to_text(doc) for doc in all_candidates]
     vectorizer = TfidfVectorizer()
     tfidf = vectorizer.fit_transform(texts)
 
-    # Compute cosine similarity between the target book and all candidates
     sims = cosine_similarity(tfidf[0:1], tfidf[1:]).flatten()
 
-    # Attach similarity scores to candidates
     scored = []
     for doc, sim in zip(all_candidates, sims):
         scored.append({**doc, "score": float(sim)})
 
-    # Sort candidates by similarity score and return up to the requested limit
     scored.sort(key=lambda x: x["score"], reverse=True)
     return scored[:limit]

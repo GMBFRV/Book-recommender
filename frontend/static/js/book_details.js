@@ -1,4 +1,18 @@
 document.addEventListener("DOMContentLoaded", async () => {
+    /**
+ * Load and display book details and recommended books on the book detail page.
+ *
+ * This script executes when the DOM is fully loaded and performs the following steps:
+ * 1. Extracts the book's work key from the current URL path.
+ * 2. Shows loading placeholders for both the book detail section and recommendations.
+ * 3. Sends a request to `/api/book/{workKey}?limit=5` to retrieve:
+ *    - Detailed metadata for the book (title, authors, rating, subjects, description, cover).
+ *    - A list of recommended similar books.
+ * 4. Renders the book information and its metadata in the `#book-detail` element.
+ * 5. Renders up to 5 book recommendations as clickable cards with title, author(s), and cover.
+ * 6. Displays appropriate fallback messages when no data is available or if an error occurs.
+ */
+
   const detailEl = document.getElementById("book-detail");
   const recEl = document.getElementById("recommendations");
   const parts = window.location.pathname.split("/");

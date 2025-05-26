@@ -2,7 +2,7 @@ from fastapi import APIRouter
 router = APIRouter(tags=["filters"])
 from fastapi import APIRouter
 
-# ------------------------------------------------- Користувачі --------------------------------------------------------
+# ---------------------------------------------------- Users -----------------------------------------------------------
 
 @router.get("/registration")
 def registration():

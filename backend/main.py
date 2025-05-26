@@ -1,13 +1,10 @@
 import logging
 from logging.config import dictConfig
 from pathlib import Path
-
-import requests
 import uvicorn
 from fastapi import FastAPI
 from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
-
 from backend.routers.filters import router as filters_router
 from backend.routers.user import router as users_router
 

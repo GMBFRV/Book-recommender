@@ -1,4 +1,18 @@
 document.addEventListener("DOMContentLoaded", async () => {
+  /**
+ * Load and display author details and their works when the author page is opened.
+ *
+ * This script runs after the DOM is fully loaded. It performs the following steps:
+ * 1. Extracts the author's key from the URL path.
+ * 2. Displays loading indicators in the author and books sections.
+ * 3. Fetches the author's metadata from `/api/author/{authorKey}` and renders:
+ *    - Name, photo, birth/death dates, works count, rating, and biography.
+ * 4. Fetches the author's books from `/api/author/{authorKey}/works?languages=en,ru` and renders:
+ *    - Book cover, title, and rating (if available).
+ * 5. Handles missing data (e.g., no photo or books) with placeholders and fallback messages.
+ * 6. Catches and displays any errors that occur during the fetch process.
+ */
+
   const authorEl = document.getElementById("author-detail");
   const booksEl = document.getElementById("author-books");
   const parts = window.location.pathname.split("/");
